@@ -1,7 +1,7 @@
 'use strict';
 /* DoraGo — çevrimdışı bilet cüzdanı */
 
-const APP_VER = '5.21.1';
+const APP_VER = '5.22';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -2219,20 +2219,22 @@ async function addTripPhotos(name) {
       pages.push({ id, w: p.w, h: p.h, blob: p.blob }); PHB.set(id, p.blob);
       r.items.push({ id, note: '', date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` });
     }
-    await putPages(pages); if (!r.cover) r.cover = r.items[0].id; await saveTP();
+    const newCover = !r.cover; await putPages(pages); if (!r.cover) { r.cover = r.items[0].id; delete r.cpos; } await saveTP();
     busy(false); toast(TL`${files.length} fotoğraf eklendi${files.length < room ? '' : ''}`); render();
+    if (newCover) coverAlign(name);
   } catch (e) { console.error(e); busy(false); toast(TX('Fotoğraf eklenemedi')); }
 }
 async function photoMenu(name, id) {
   const r = TP[name], it = r && r.items.find(i => i.id === id); if (!it) return;
   const v = await sheetMenu(it.note || TX('Anı fotoğrafı'), [
-    ...(r.cover !== id ? [{ icon: I('photo'), label: TX('Kapak yap'), sub: TX('Sayfanın ve kartpostalın fotoğrafı'), value: 'cover' }] : []),
+    ...(r.cover !== id ? [{ icon: I('photo'), label: TX('Kapak yap'), sub: TX('Sayfanın ve kartpostalın fotoğrafı'), value: 'cover' }] : [{ icon: I('arrows-move'), label: TX('Kapağı hizala'), sub: TX('Sürükle ve büyüt'), value: 'align' }]),
     { icon: I('pencil'), label: it.note ? TX('Notu değiştir') : TX('Not yaz'), value: 'note' },
     { icon: I('trash'), label: TX('Sil'), value: 'del', danger: true },
   ]); if (!v) return;
-  if (v === 'cover') { r.cover = id; toast(TX('Kapak yapıldı')); }
+  if (v === 'align') { coverAlign(name); return; }
+  if (v === 'cover') { r.cover = id; delete r.cpos; await saveTP(); render(); coverAlign(name); return; }
   else if (v === 'note') { const n = await inputDialog({ title: TX('Fotoğraf notu'), value: it.note, placeholder: TX('Örn. Hyde Park'), ok: TX('Kaydet') }); if (n == null) return; it.note = n.trim(); }
-  else if (v === 'del') { if (!await dialog({ title: TX('Fotoğraf silinsin mi?'), ok: TX('Sil'), danger: true })) return; r.items = r.items.filter(i => i.id !== id); if (r.cover === id) r.cover = r.items[0] ? r.items[0].id : null; await delPages([id]); PHB.delete(id); }
+  else if (v === 'del') { if (!await dialog({ title: TX('Fotoğraf silinsin mi?'), ok: TX('Sil'), danger: true })) return; r.items = r.items.filter(i => i.id !== id); if (r.cover === id) { r.cover = r.items[0] ? r.items[0].id : null; delete r.cpos; } await delPages([id]); PHB.delete(id); }
   await saveTP(); render();
 }
 /* ---------- 5.18 seyahat görseli: kapak fotoğrafı ya da ülke haritası + bayrak ---------- */
@@ -2315,7 +2317,61 @@ async function fillCovers(root) {
     const b = await tripCoverBlob(el.dataset.cov); if (!b || !el.isConnected) continue;
     el.style.backgroundImage = `linear-gradient(180deg,rgba(0,0,0,.28) 0%,rgba(0,0,0,0) 30%,rgba(0,0,0,.08) 50%,rgba(0,0,0,.62) 100%),url('${blobURL('ph:' + el.dataset.cov + ':' + b.size, b)}')`;
     el.classList.add('hascov');
+    const cp = TP[el.dataset.cov] && TP[el.dataset.cov].cpos;
+    if (cp) { const d = await imgDims(b); if (d && el.isConnected) { el._cov = { cp, d }; placeCover(el); } }
   }
+}
+/* 5.22 kapak hizalama: cpos = {x,y} (kadrajın ortasına gelen nokta, 0–1) + z (cover'a göre yakınlaştırma) */
+const IMG_DIMS = new WeakMap();
+async function imgDims(b) {
+  if (IMG_DIMS.has(b)) return IMG_DIMS.get(b);
+  let d = null; try { const bm = await createImageBitmap(b); d = { w: bm.width, h: bm.height }; bm.close && bm.close(); } catch (e) {}
+  IMG_DIMS.set(b, d); return d;
+}
+function coverBox(W, H, d, cp) {
+  const sc = Math.max(W / d.w, H / d.h) * (cp.z || 1), dw = d.w * sc, dh = d.h * sc;
+  const ox = Math.min(0, Math.max(W - dw, W / 2 - cp.x * dw)), oy = Math.min(0, Math.max(H - dh, H / 2 - cp.y * dh));
+  return { dw, dh, ox, oy };
+}
+function placeCover(el) {
+  const { cp, d } = el._cov || {}; if (!cp) return; const W = el.clientWidth, H = el.clientHeight; if (!W || !H) return;
+  const k = coverBox(W, H, d, cp);
+  el.style.backgroundSize = `100% 100%, ${k.dw}px ${k.dh}px`; el.style.backgroundPosition = `0 0, ${k.ox}px ${k.oy}px`;
+}
+addEventListener('resize', () => $$('[data-cdone]').forEach(el => el._cov && placeCover(el)));
+async function coverAlign(name) {
+  await getTP(); const r = TP[name]; const b = await tripCoverBlob(name); if (!r || !b) return; const d = await imgDims(b); if (!d) return;
+  const cp0 = r.cpos || { x: .5, y: .5, z: 1 }; let z = cp0.z || 1, W = 0, H = 0, k = null;
+  const ov = document.createElement('div'); ov.className = 'ov';
+  ov.innerHTML = TL`<div class="dlg cal"><h3>Kapağı hizala</h3><p class="calh">Sürükle · iki parmakla büyüt</p>
+    <div class="calf"><img src="${blobURL('ph:' + name + ':' + b.size, b)}" alt="" draggable="false"></div>
+    <div class="calz">${I('zoom-out')}<input type="range" id="calZ" min="1" max="3" step="0.01" value="${z}">${I('zoom-in')}</div>
+    <div class="row2"><button class="btn" data-a="0">Vazgeç</button><button class="btn" data-a="2">Sıfırla</button><button class="btn pri" data-a="1">Kaydet</button></div></div>`;
+  document.body.appendChild(ov);
+  const fr = $('.calf', ov), im = $('img', fr), zr = $('#calZ', ov);
+  W = Math.min(fr.clientWidth || 300, 440); H = Math.round(W / 2.55); fr.style.width = W + 'px'; fr.style.height = H + 'px';
+  k = coverBox(W, H, d, { x: cp0.x, y: cp0.y, z });
+  const draw = () => { im.style.width = k.dw + 'px'; im.style.height = k.dh + 'px'; im.style.transform = `translate(${k.ox}px,${k.oy}px)`; };
+  const focal = () => ({ x: (W / 2 - k.ox) / k.dw, y: (H / 2 - k.oy) / k.dh });
+  const setZ = nz => { const f = focal(); z = Math.min(3, Math.max(1, nz)); k = coverBox(W, H, d, { ...f, z }); zr.value = z; draw(); };
+  const move = (dx, dy) => { k.ox = Math.min(0, Math.max(W - k.dw, k.ox + dx)); k.oy = Math.min(0, Math.max(H - k.dh, k.oy + dy)); draw(); };
+  draw();
+  const pts = new Map(); let pinch0 = 0, z0 = 1;
+  const dist = () => { const [a, c] = [...pts.values()]; return Math.hypot(a.x - c.x, a.y - c.y); };
+  fr.addEventListener('pointerdown', e => { fr.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (pts.size === 2) { pinch0 = dist(); z0 = z; } });
+  fr.addEventListener('pointermove', e => {
+    const p = pts.get(e.pointerId); if (!p) return; const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+    if (pts.size === 1) move(dx, dy); else if (pts.size === 2 && pinch0) setZ(z0 * dist() / pinch0);
+  });
+  const up = e => { pts.delete(e.pointerId); if (pts.size < 2) pinch0 = 0; };
+  fr.addEventListener('pointerup', up); fr.addEventListener('pointercancel', up);
+  fr.addEventListener('wheel', e => { e.preventDefault(); setZ(z * (e.deltaY < 0 ? 1.08 : 1 / 1.08)); }, { passive: false });
+  zr.oninput = () => setZ(+zr.value);
+  const a = await new Promise(res => ov.addEventListener('click', e => { const bt = e.target.closest('[data-a]'); if (bt) res(bt.dataset.a); else if (e.target === ov) res('0'); }));
+  ov.remove();
+  if (a === '0') return;
+  if (a === '2') delete r.cpos; else { const f = focal(); r.cpos = { x: +f.x.toFixed(4), y: +f.y.toFixed(4), z: +z.toFixed(3) }; }
+  await saveTP(); toast(TX('Kapak hizalandı')); render();
 }
 async function tripsData() { TRIPS_READY = 2; await getTP(); await getPacks(); await getShop(); await getExp(); await getFx(); await getDocs(); await loadVisa(); await loadWorld(); }
 async function openTrip(name) {
@@ -2814,7 +2870,7 @@ function heroHtml() {
   const [y, m, d] = t0.date.split('-').map(Number);
   const when = daysLeft(t0.date) === 0 ? TX('Bugün') : daysLeft(t0.date) === 1 ? TX('Yarın') : `${new Date(y, m - 1, d).toLocaleDateString(LOC, { weekday: 'short' })} ${d} ${MONTH_TR[m - 1].slice(0, 3)}`;
   const what = t0.type === 'ucak' && t0.from && t0.to ? `${t0.from} → ${t0.to}${t0.flightNo ? ' · ' + t0.flightNo : ''}` : (t0.title || typeOf(t0.type).n);
-  const ready = t0.trip && artReady(), cov = ready && tripHasCover(t0.trip), art = ready && !cov ? tripMapSvg(t0.trip) : '', flags = t0.trip ? tripFlags(t0.trip) : '';
+  const ready = t0.trip && artReady(), cov = false /* 5.22: sıradaki seyahat kartında hep harita (kapak yalnız seyahat kartlarında) */, art = ready ? tripMapSvg(t0.trip) : '', flags = t0.trip ? tripFlags(t0.trip) : '';
   return `<button class="hero${cov ? ' cov' : ''}" id="hero" data-trip="${esc(t0.trip || '')}" data-id="${esc(t0.id)}"${cov ? ` data-cov="${esc(t0.trip)}"` : ''}>${art ? `<span class="hart">${art}</span>` : ''}
     ${flags ? `<div class="hflag">${flags}</div>` : ''}<div class="hk">${on ? TX('Şu an seyahattesin') : t0.trip ? TX('Sıradaki seyahat') : TX('Sıradaki bilet')}</div>
     <div class="hr"><div class="hn">${esc(name)}</div>${on ? TL`<div class="hc"><b>${I('plane-tilt')}</b><small>şu an</small></div>` : n <= 0 ? TL`<div class="hc"><b>${I(typeOf(t0.type).ic)}</b><small>bugün</small></div>` : `<div class="hc"><b>${n}</b><small>${n === 1 ? TX('gün · yarın') : TX('gün kaldı')}</small></div>`}</div>
@@ -4681,7 +4737,7 @@ async function restore() {
     if (data.wish) { await getWish(); for (const [k, v] of Object.entries(data.wish)) if (!WISH[k]) WISH[k] = v; await saveWish(); }
     if (data.expenses) { await getExp(); mergeExp(data.expenses); await saveExp(); }
     if (data.shop) { await getShop(); const have = new Set(Object.values(SHOP).flatMap(r => r.items.map(i => i.ph)).filter(Boolean)); mergeShop(data.shop); const np = []; for (const r of Object.values(data.shop)) for (const i of r.items || []) { const x = i.ph && !have.has(i.ph) && pageMap.get(i.ph); if (x) np.push({ id: x.id, w: x.w, h: x.h, blob: new Blob([B64.dec(x.data)], { type: x.type }) }); } if (np.length) await putPages(np); await saveShop(); }
-    if (data.tripPhotos) { await getTP(); const np = []; for (const [k, r] of Object.entries(data.tripPhotos)) { const cur = TP[k] || (TP[k] = { cover: r.cover, items: [] }); for (const it of r.items || []) { const pg = pageMap.get(it.id); if (!pg || cur.items.some(x => x.id === it.id) || cur.items.length >= PHOTO_MAX) continue; np.push({ id: pg.id, w: pg.w, h: pg.h, blob: new Blob([B64.dec(pg.data)], { type: pg.type }) }); cur.items.push(it); } if (!cur.cover && cur.items[0]) cur.cover = cur.items[0].id; if (!cur.items.length) delete TP[k]; } if (np.length) await putPages(np); await saveTP(); }
+    if (data.tripPhotos) { await getTP(); const np = []; for (const [k, r] of Object.entries(data.tripPhotos)) { const cur = TP[k] || (TP[k] = { cover: r.cover, items: [], ...(r.cpos ? { cpos: r.cpos } : {}) }); for (const it of r.items || []) { const pg = pageMap.get(it.id); if (!pg || cur.items.some(x => x.id === it.id) || cur.items.length >= PHOTO_MAX) continue; np.push({ id: pg.id, w: pg.w, h: pg.h, blob: new Blob([B64.dec(pg.data)], { type: pg.type }) }); cur.items.push(it); } if (!cur.cover && cur.items[0]) cur.cover = cur.items[0].id; if (!cur.items.length) delete TP[k]; } if (np.length) await putPages(np); await saveTP(); }
     busy(false);
     toast(added ? TL`${added} bilet geri yüklendi` : tAdded ? TL`${tAdded} seyahat geri yüklendi` : TX('Yedekteki biletler zaten mevcut'), 3500);
     if (tAdded && !added) render();
@@ -4718,7 +4774,7 @@ async function shareTrip(name) {
     for (const id of pageIds) { const p = await getOne('pages', id); if (p) pages.push({ id: p.id, w: p.w, h: p.h, type: p.blob.type, data: B64.enc(await p.blob.arrayBuffer()) }); }
     const g = allTrips().find(x => x.name === name) || {}, r = tripRec(name);
     let photos = null;
-    if (withPh) { photos = { cover: TP[name].cover, items: phs, pages: [] }; for (const it of phs) { const p = await getOne('pages', it.id); if (p) photos.pages.push({ id: p.id, w: p.w, h: p.h, type: p.blob.type, data: B64.enc(await p.blob.arrayBuffer()) }); } }
+    if (withPh) { photos = { cover: TP[name].cover, cpos: TP[name].cpos, items: phs, pages: [] }; for (const it of phs) { const p = await getOne('pages', it.id); if (p) photos.pages.push({ id: p.id, w: p.w, h: p.h, type: p.blob.type, data: B64.enc(await p.blob.arrayBuffer()) }); } }
     await getExp(); const expenses = EXP[name] ? { [name]: EXP[name] } : null;
     await getShop(); const shop = SHOP[name] && SHOP[name].items.length ? { [name]: SHOP[name] } : null;
     if (shop) for (const id of shopPhotoIds(name)) { const p = await getOne('pages', id); if (p) pages.push({ id: p.id, w: p.w, h: p.h, type: p.blob.type, data: B64.enc(await p.blob.arrayBuffer()) }); }
@@ -4820,7 +4876,7 @@ async function importTripFile(buf) {
       S.tickets = S.tickets.filter(x => x.id !== t.id); S.tickets.push(ticket); n++;
     }
     if (data.photos && data.photos.items) {
-      await getTP(); const cur = TP[name] || (TP[name] = { cover: data.photos.cover, items: [] }); const pm = new Map((data.photos.pages || []).map(x => [x.id, x])); const np = [];
+      await getTP(); const cur = TP[name] || (TP[name] = { cover: data.photos.cover, items: [], ...(data.photos.cpos ? { cpos: data.photos.cpos } : {}) }); const pm = new Map((data.photos.pages || []).map(x => [x.id, x])); const np = [];
       for (const it of data.photos.items) { if (cur.items.some(x => x.id === it.id) || cur.items.length >= PHOTO_MAX || !pm.get(it.id)) continue; const x = pm.get(it.id); np.push({ id: x.id, w: x.w, h: x.h, blob: new Blob([B64.dec(x.data)], { type: x.type }) }); cur.items.push(it); }
       if (np.length) { await putPages(np); if (!cur.cover) cur.cover = cur.items[0].id; } if (!cur.items.length) delete TP[name]; await saveTP(); PHB.clear();
     }
