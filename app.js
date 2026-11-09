@@ -1,7 +1,7 @@
 'use strict';
 /* DoraGo — çevrimdışı bilet cüzdanı */
 
-const APP_VER = '5.22';
+const APP_VER = '5.23';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -63,6 +63,7 @@ const pagesInUse = (ids, exceptId) => ids.filter(id => !S.tickets.some(o => o.id
 async function deleteTicketDB(ticket) {
   const t = (await db()).transaction(['tickets', 'pages'], 'readwrite');
   for (const id of pagesInUse(ticket.pageIds, ticket.id)) t.objectStore('pages').delete(id);
+  if (ticket.hph && ticket.hph.id) t.objectStore('pages').delete(ticket.hph.id);
   t.objectStore('tickets').delete(ticket.id);
   return done(t);
 }
@@ -2339,12 +2340,13 @@ function placeCover(el) {
   el.style.backgroundSize = `100% 100%, ${k.dw}px ${k.dh}px`; el.style.backgroundPosition = `0 0, ${k.ox}px ${k.oy}px`;
 }
 addEventListener('resize', () => $$('[data-cdone]').forEach(el => el._cov && placeCover(el)));
-async function coverAlign(name) {
-  await getTP(); const r = TP[name]; const b = await tripCoverBlob(name); if (!r || !b) return; const d = await imgDims(b); if (!d) return;
-  const cp0 = r.cpos || { x: .5, y: .5, z: 1 }; let z = cp0.z || 1, W = 0, H = 0, k = null;
+/* sürükle + yakınlaştır penceresi: yeni cpos döner; null = sıfırla, undefined = vazgeç */
+async function alignDialog(b, cp0, title) {
+  const d = await imgDims(b); if (!d) return undefined;
+  cp0 = cp0 || { x: .5, y: .5, z: 1 }; let z = cp0.z || 1, W = 0, H = 0, k = null;
   const ov = document.createElement('div'); ov.className = 'ov';
-  ov.innerHTML = TL`<div class="dlg cal"><h3>Kapağı hizala</h3><p class="calh">Sürükle · iki parmakla büyüt</p>
-    <div class="calf"><img src="${blobURL('ph:' + name + ':' + b.size, b)}" alt="" draggable="false"></div>
+  ov.innerHTML = TL`<div class="dlg cal"><h3>${esc(title)}</h3><p class="calh">Sürükle · iki parmakla büyüt</p>
+    <div class="calf"><img src="${blobURL('al:' + b.size + ':' + b.type, b)}" alt="" draggable="false"></div>
     <div class="calz">${I('zoom-out')}<input type="range" id="calZ" min="1" max="3" step="0.01" value="${z}">${I('zoom-in')}</div>
     <div class="row2"><button class="btn" data-a="0">Vazgeç</button><button class="btn" data-a="2">Sıfırla</button><button class="btn pri" data-a="1">Kaydet</button></div></div>`;
   document.body.appendChild(ov);
@@ -2369,9 +2371,141 @@ async function coverAlign(name) {
   zr.oninput = () => setZ(+zr.value);
   const a = await new Promise(res => ov.addEventListener('click', e => { const bt = e.target.closest('[data-a]'); if (bt) res(bt.dataset.a); else if (e.target === ov) res('0'); }));
   ov.remove();
-  if (a === '0') return;
-  if (a === '2') delete r.cpos; else { const f = focal(); r.cpos = { x: +f.x.toFixed(4), y: +f.y.toFixed(4), z: +z.toFixed(3) }; }
+  if (a === '0') return undefined;
+  if (a === '2') return null;
+  const f = focal(); return { x: +f.x.toFixed(4), y: +f.y.toFixed(4), z: +z.toFixed(3) };
+}
+async function coverAlign(name) {
+  await getTP(); const r = TP[name]; const b = await tripCoverBlob(name); if (!r || !b) return;
+  const cp = await alignDialog(b, r.cpos, TX('Kapağı hizala')); if (cp === undefined) return;
+  if (cp === null) delete r.cpos; else r.cpos = cp;
   await saveTP(); toast(TX('Kapak hizalandı')); render();
+}
+
+/* ================= 5.23 bilet başlık fotoğrafı (yer fotoğrafı) =================
+   t.hph = { id:'hp_<bilet>', src:'wm'|'own', cr, lic, url, cpos } · { none: zaman } (bulunamadı) · { off: 1 } (harita kalsın)
+   Kaynak: Wikipedia sayfa görseli + Wikimedia Commons yakın fotoğrafları (anahtarsız, origin=*). Bir kez indirilir, pages deposunda saklanır. */
+const PH_TYPES = ['muze', 'etkinlik', 'konaklama', 'yemek', 'gezi', 'diger'];
+const phAuto = () => lsGet('dgPlacePh', true) !== false;
+const phEligible = t => PH_TYPES.includes(t.type) && (hasC(t) || ((t.title || '').trim().length > 2 && !!t.place));
+const PH_BUSY = new Set();
+const phNorm = x => (x || '').toLocaleLowerCase('en').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/^file:/, '').replace(/\.(jpe?g|png|webp|tiff?)$/, '').replace(/[^a-z0-9]+/g, ' ').trim();
+const PH_STOP = new Set(['the', 'of', 'and', 'de', 'la', 'le', 'du', 'des', 'di', 'del', 'hotel', 'otel', 'museum', 'muzesi', 'museo', 'musee', 'restaurant', 'cafe', 'bar', 'london', 'paris', 'istanbul', 'in', 'at', 'a']);
+function phSim(name, title) {
+  const A1 = phNorm(name).split(' ').filter(w => w.length > 1), B1 = new Set(phNorm(title).split(' '));
+  const key = A1.filter(w => !PH_STOP.has(w)); if (!A1.length) return 0;
+  const hit = A1.filter(w => B1.has(w)).length, khit = key.filter(w => B1.has(w)).length;
+  return key.length ? (khit / key.length) * .8 + (hit / A1.length) * .2 : hit / A1.length * .5;
+}
+async function wjson(url) { const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error('http ' + r.status); return r.json(); }
+const WQ = '&format=json&formatversion=2&origin=*';
+const thumbW = (u, w) => u && /\/\d+px-/.test(u) ? u.replace(/\/\d+px-/, `/${w}px-`) : u;
+const stripHtml = h => { const d = document.createElement('div'); d.innerHTML = h || ''; return (d.textContent || '').replace(/\s+/g, ' ').trim(); };
+/* aday fotoğraflar: Wikipedia (konum ya da adla) + Commons (konumla) */
+async function placeCands(t) {
+  const out = [], seen = new Set(), name = t.title || '';
+  const push = o => { const k = phNorm(o.file); if (!o.big || seen.has(k)) return; seen.add(k); out.push(o); };
+  const wikiPages = ps => (ps || []).filter(p => p.thumbnail && p.pageimage && !/\.svg$/i.test(p.pageimage)).forEach(p => push({ file: 'File:' + p.pageimage, big: p.thumbnail.source, thumb: thumbW(p.thumbnail.source, 330), title: p.title, sim: phSim(name, p.title), idx: p.index || 0, wiki: true }));
+  const jobs = [];
+  if (hasC(t)) {
+    jobs.push(wjson(`https://en.wikipedia.org/w/api.php?action=query&generator=geosearch&ggscoord=${+t.lat}|${+t.lon}&ggsradius=400&ggslimit=10&prop=pageimages&piprop=thumbnail|name&pithumbsize=1280${WQ}`).then(j => wikiPages(j.query && j.query.pages)).catch(() => {}));
+    jobs.push(wjson(`https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch&ggscoord=${+t.lat}|${+t.lon}&ggsradius=250&ggslimit=20&ggsnamespace=6&prop=imageinfo&iiprop=url|mime|extmetadata&iiurlwidth=1280&iiextmetadatafilter=Artist|LicenseShortName${WQ}`).then(j => {
+      for (const p of (j.query && j.query.pages) || []) {
+        const ii = (p.imageinfo || [])[0]; if (!ii || !/^image\/(jpeg|png|webp)$/.test(ii.mime || '')) continue;
+        const m = ii.extmetadata || {};
+        push({ file: p.title, big: ii.thumburl || ii.url, thumb: thumbW(ii.thumburl, 330) || ii.url, title: p.title, sim: phSim(name, p.title), idx: p.index || 0, cr: stripHtml(m.Artist && m.Artist.value).slice(0, 60), lic: m.LicenseShortName && m.LicenseShortName.value || '', url: ii.descriptionurl || '' });
+      }
+    }).catch(() => {}));
+  }
+  if (name.trim().length > 2) {
+    const city = (t.place || '').split(',').map(x => x.trim()).filter(Boolean).slice(-2, -1)[0] || (hasC(t) ? nearCity(t.lat, t.lon) : '') || '';
+    jobs.push(wjson(`https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent((name + ' ' + city).trim())}&gsrlimit=5&prop=pageimages&piprop=thumbnail|name&pithumbsize=1280${WQ}`).then(j => wikiPages(j.query && j.query.pages)).catch(() => {}));
+  }
+  await Promise.all(jobs);
+  out.sort((a, b) => (b.sim - a.sim) || ((b.wiki ? 1 : 0) - (a.wiki ? 1 : 0)) || (a.idx - b.idx));
+  return out.slice(0, 9);
+}
+/* Wikipedia görselinin yazar/lisans bilgisi */
+async function phCredit(c) {
+  if (c.cr !== undefined && c.lic) return c;
+  try {
+    const j = await wjson(`https://commons.wikimedia.org/w/api.php?action=query&titles=${encodeURIComponent(c.file)}&prop=imageinfo&iiprop=url|extmetadata&iiextmetadatafilter=Artist|LicenseShortName${WQ}`);
+    const ii = ((((j.query || {}).pages || [])[0] || {}).imageinfo || [])[0];
+    if (ii) { const m = ii.extmetadata || {}; c.cr = stripHtml(m.Artist && m.Artist.value).slice(0, 60); c.lic = m.LicenseShortName && m.LicenseShortName.value || ''; c.url = ii.descriptionurl || ''; }
+  } catch (e) {}
+  return c;
+}
+async function phSave(t, blob, meta) {
+  const sh = await shrinkPhoto(blob, 1280).catch(() => null), b = sh ? sh.blob || sh : blob;
+  const d = await imgDims(b) || { w: 0, h: 0 }, id = 'hp_' + t.id;
+  const fresh = await getOne('tickets', t.id) || t;
+  fresh.hph = { id, ...meta }; t.hph = fresh.hph;
+  await saveTicketDB(fresh, [{ id, w: d.w, h: d.h, blob: b }], []);
+  const i = S.tickets.findIndex(x => x.id === t.id); if (i >= 0) S.tickets[i] = fresh; if (S.cur && S.cur.t && S.cur.t.id === t.id) S.cur.t = fresh;
+  return fresh;
+}
+async function phFromCand(t, c) {
+  await phCredit(c);
+  const r = await fetch(c.big); if (!r.ok) throw new Error('img');
+  return phSave(t, await r.blob(), { src: 'wm', cr: c.cr || '', lic: c.lic || '', url: c.url || '' });
+}
+async function phMark(t, v) {
+  const fresh = await getOne('tickets', t.id) || t; const old = fresh.hph; fresh.hph = v; t.hph = v;
+  await saveTicketDB(fresh, [], old && old.id ? [old.id] : []);
+  const i = S.tickets.findIndex(x => x.id === t.id); if (i >= 0) S.tickets[i] = fresh; if (S.cur && S.cur.t && S.cur.t.id === t.id) S.cur.t = fresh;
+}
+/* görüntüleyici açılınca: uygunsa bir kez otomatik dene */
+async function phAutoFetch(t) {
+  if (!phAuto() || !phEligible(t) || PH_BUSY.has(t.id) || !navigator.onLine) return;
+  const h = t.hph; if (h && (h.id || h.off || (h.none && Date.now() - h.none < 30 * 864e5))) return;
+  PH_BUSY.add(t.id);
+  try {
+    const cs = await placeCands(t), best = cs.find(c => c.sim >= .5);
+    if (best) { await phFromCand(t, best); if (S.view === 'view' && S.cur && S.cur.t && S.cur.t.id === t.id) render(); }
+    else if (cs.length || hasC(t)) await phMark(t, { none: Date.now() });
+  } catch (e) {} finally { PH_BUSY.delete(t.id); }
+}
+async function phBlob(t) { if (!t.hph || !t.hph.id) return null; const p = await getOne('pages', t.hph.id); return p && p.blob; }
+async function fillVhero(t) {
+  const el = $('#app .vhero[data-hph]') || $('.vhero[data-hph]:not(.ghost *)'); if (!el) return; const b = await phBlob(t); if (!b || !el.isConnected) return;
+  el.style.backgroundImage = `linear-gradient(180deg,rgba(0,0,0,.42) 0%,rgba(0,0,0,0) 32%,rgba(0,0,0,.1) 50%,rgba(0,0,0,.7) 100%),url('${blobURL('hp:' + t.id + ':' + b.size, b)}')`;
+  el.classList.add('hasph');
+  const cp = t.hph.cpos; if (cp) { const d = await imgDims(b); if (d) { el._cov = { cp, d }; el.dataset.cdone = '1'; placeCover(el); } }
+}
+/* Değiştir penceresi: adaylar + Galeriden / Harita / Hizala */
+async function placePhotoSheet(t) {
+  const ov = document.createElement('div'); ov.className = 'ov';
+  const has = !!(t.hph && t.hph.id);
+  ov.innerHTML = TL`<div class="dlg pps"><h3>Başlık fotoğrafı</h3><p class="calh">${esc(t.title || '')}</p>
+    <div class="ppg" id="ppg"><div class="ppl">${I('loader-2')} Fotoğraflar aranıyor…</div></div>
+    <div class="ppo"><button class="btn" data-a="gal">${I('photo-plus')} Galeriden</button><button class="btn" data-a="map">${I('map')} Harita</button>${has ? TL`<button class="btn" data-a="align">${I('arrows-move')} Hizala</button>` : ''}</div>
+    <p class="ppn">Wikipedia/Wikimedia Commons'tan serbest lisanslı fotoğraflar · yalnız yerin adı ve konumu gönderilir</p>
+    <div class="row2"><button class="btn" data-a="x">Kapat</button></div></div>`;
+  document.body.appendChild(ov);
+  let cands = [];
+  const fill = async () => {
+    const g = $('#ppg', ov); if (!navigator.onLine) { g.innerHTML = TL`<div class="ppl">İnternet yok</div>`; return; }
+    try { cands = await placeCands(t); } catch (e) { cands = []; }
+    if (!ov.isConnected) return;
+    g.innerHTML = cands.length ? cands.map((c, i) => `<button class="ppi" data-c="${i}" style="background-image:url('${esc(c.thumb)}')" aria-label="${esc(c.title)}"></button>`).join('') : TL`<div class="ppl">Bu yer için fotoğraf bulunamadı</div>`;
+  };
+  fill();
+  const act = await new Promise(res => ov.addEventListener('click', e => { const c = e.target.closest('[data-c]'); if (c) return res('c' + c.dataset.c); const bt = e.target.closest('[data-a]'); if (bt) res(bt.dataset.a); else if (e.target === ov) res('x'); }));
+  ov.remove();
+  try {
+    if (act[0] === 'c') { busy(TX('Fotoğraf indiriliyor…')); try { t = await phFromCand(t, cands[+act.slice(1)]); } finally { busy(false); } render(); }
+    else if (act === 'gal') {
+      const fs = await pickFiles('image/*', false); if (!fs.length) return;
+      busy(TX('Fotoğraf ekleniyor…')); try { t = await phSave(t, fs[0], { src: 'own' }); } finally { busy(false); }
+      render(); const cp = await alignDialog(await phBlob(t), null, TX('Fotoğrafı hizala')); if (cp) await phSetPos(t, cp);
+    } else if (act === 'map') { await phMark(t, { off: 1 }); render(); }
+    else if (act === 'align') { const cp = await alignDialog(await phBlob(t), t.hph.cpos, TX('Fotoğrafı hizala')); if (cp !== undefined) await phSetPos(t, cp); }
+  } catch (e) { toast(TX('Fotoğraf alınamadı')); }
+}
+async function phSetPos(t, cp) {
+  const fresh = await getOne('tickets', t.id) || t; if (!fresh.hph || !fresh.hph.id) return;
+  if (cp) fresh.hph.cpos = cp; else delete fresh.hph.cpos;
+  await saveTicketDB(fresh, [], []); const i = S.tickets.findIndex(x => x.id === t.id); if (i >= 0) S.tickets[i] = fresh; if (S.cur && S.cur.t && S.cur.t.id === t.id) S.cur.t = fresh; render();
 }
 async function tripsData() { TRIPS_READY = 2; await getTP(); await getPacks(); await getShop(); await getExp(); await getFx(); await getDocs(); await loadVisa(); await loadWorld(); }
 async function openTrip(name) {
@@ -3392,11 +3526,13 @@ function renderViewer(app, anim) {
     + (t.status === 'cancel' && t.refund ? TL`<div class="vrow vrf"><span class="vri">${I('receipt-refund')}</span><span class="vrt"><small>İade</small><b>${t.refund.state === 'wait' ? TX('Bekleniyor') : TX('Alındı')}${t.refund.amt ? ` · ${esc(t.refund.amt)} ${curSym(t.refund.cur)}` : ''}</b><span>${t.refund.state === 'wait' ? esc(refundTxt({ ...t.refund, amt: '' })) + ' · son ' + esc(fmtDate(t.refund.due)) : esc(fmtDate(t.refund.got || t.refund.due))}</span></span>${t.refund.state === 'wait' ? TL`<button class="btn rfgot" id="rfgot">Alındı</button>` : ''}</div>` : '')
     + (t.notes ? TL`<div class="vrow nt"><span class="vri">${I('pencil')}</span><span class="vrt"><small>Not</small><span class="vnote">${esc(t.notes).replace(/\n/g, '<br>')}</span></span></div>` : '')
     + (isFl && t.trip ? TL`<div class="vrow nt"><span class="vri">${I('luggage')}</span><span class="vrt"><small>Seyahat</small><b>${esc(t.trip)}</b></span></div>` : '');
-  const art = artReady() ? ticketArt(t) : '';
+  const hph = t.hph && t.hph.id, phOk = phEligible(t) || hph;
+  const art = !hph && artReady() ? ticketArt(t) : '';
+  const cred = hph && t.hph.src === 'wm' ? `<span class="vcred">${esc(TX('Foto') + ': ' + [t.hph.cr || 'Wikimedia', t.hph.lic].filter(Boolean).join(' · '))}</span>` : '';
   app.innerHTML = TL`<div class="viewer v2 v3${animCls(anim)}">
-    <div class="vhero${isFl ? ' fl' : ''}" style="--kc:${ty.col || 'var(--acc)'}">${art ? `<div class="vart${isFl ? ' rte' : ''}">${art}</div>` : ''}
-      <div class="tpbar"><button class="icon-btn" id="back" aria-label="Geri">←</button><button class="icon-btn" id="edit" aria-label="Düzenle">${I('pencil')}</button></div>
-      <div class="vhb">${top}</div></div>
+    <div class="vhero${isFl ? ' fl' : ''}" style="--kc:${ty.col || 'var(--acc)'}"${hph ? ` data-hph="1"` : ''}>${art ? `<div class="vart${isFl ? ' rte' : ''}">${art}</div>` : ''}
+      <div class="tpbar"><button class="icon-btn" id="back" aria-label="Geri">←</button><span class="tpsp"></span>${phOk ? `<button class="icon-btn" id="vph" aria-label="${TX('Başlık fotoğrafı')}">${I('photo')}</button>` : ''}<button class="icon-btn" id="edit" aria-label="Düzenle">${I('pencil')}</button></div>
+      <div class="vhb">${top}</div>${cred}</div>
     <div class="vbody">
       ${chips || wxc ? `<div class="vchips">${chips}${wxc}</div>` : ''}
       <div class="tgrid vgrid">${acts.join('')}</div>
@@ -3407,6 +3543,9 @@ function renderViewer(app, anim) {
     </div></div>`;
   $('#back').onclick = () => go('home', 'back');
   $('#edit').onclick = () => editTicket(t);
+  const vph = $('#vph', app); if (vph) vph.onclick = () => placePhotoSheet(t);
+  const vcr = $('.vcred', app); if (vcr && t.hph && t.hph.url) vcr.onclick = () => openUrl(t.hph.url);
+  if (hph) fillVhero(t); else phAutoFetch(t);
   const fsb = $('#vfs'); if (fsb) bindCardPress(fsb, () => openFlightStatus(t, 'trip'), async () => { const v = await sheetMenu(TX('Uçuş durumu'), [{ icon: I('external-link'), label: TX('Trip.com'), value: 'trip' }, { icon: I('external-link'), label: TX('Google'), value: 'google' }, { icon: I('external-link'), label: TX('Flightradar24'), value: 'fr24' }]); if (v) openFlightStatus(t, v); });
   $('#vdir').onclick = () => locs.length ? pinTap(t.id, false) : addLocMenu(t);
   $$('[data-fs2]').forEach(b => b.onclick = () => openFlightStatus(t, b.dataset.fs2));
@@ -3911,7 +4050,7 @@ async function buildTicket(d, thumb) {
   if (d.type !== 'ucak' && d.type !== 'konaklama') ticket.endTime = d.endTime && d.time && d.endTime > d.time ? d.endTime : '';
   if (d.type === 'konaklama') Object.assign(ticket, { endDate: d.endDate && d.endDate >= d.date ? d.endDate : '', endTime: d.endTime });
   if (parseAmt(d.priceAmt) > 0) Object.assign(ticket, { priceAmt: String(parseAmt(d.priceAmt)), priceCur: (d.priceCur || baseCur()).toUpperCase().slice(0, 3) });
-  for (const k of ['status', 'statusAuto', 'refund', 'pf', 'pPay', 'pSplit', 'pR', 'pRb']) if (d[k] !== undefined && d[k] !== null && d[k] !== '') ticket[k] = d[k];
+  for (const k of ['status', 'statusAuto', 'refund', 'pf', 'pPay', 'pSplit', 'pR', 'pRb', 'hph']) if (d[k] !== undefined && d[k] !== null && d[k] !== '') ticket[k] = d[k];
   if (ticket.pRb && ticket.priceCur && d.priceCur !== undefined && (d._pc0 || '') !== ticket.priceCur) { delete ticket.pR; delete ticket.pRb; }
   return ticket;
 }
@@ -4530,7 +4669,8 @@ function renderSettings(app, anim) {
       ${canGeo() ? TL`<div class="item"><span class="ii">${I('map-pin')}</span><span class="it">Adresten konum bul<small>Bilet eklerken adres OpenStreetMap tabanlı servislere (Nominatim, Photon) gönderilir; internet gerekir</small></span><label class="sw"><input type="checkbox" id="geo" ${S.geocode ? 'checked' : ''}><span></span></label></div>` : ''}</div>` : ''}
     ${!A ? TL`<div class="gtitle">Hatırlatmalar</div><div class="group"><div class="item"><span class="ii">${I('bell')}</span><span class="it">Takvim hatırlatmaları<small>Web sürümünde bildirim gönderilemiyor. Biletteki <b>Takvim</b> butonu etkinliği 1 gün önce ve ${S.notif && S.notif.hours ? S.notif.hours : 3} saat önce uyarılı olarak telefonun takvimine ekler.</small></span></div></div>` : ''}
     <div class="gtitle">Hava durumu</div>
-    <div class="group"><div class="item"><span class="ii">${I('cloud')}</span><span class="it">Hava durumunu göster<small>Biletlerde, seyahatlerde, takvimde ve bildirimlerde. Konumun koordinatı Open-Meteo'ya gönderilir; internet gerekir, son tahmin telefonda saklanır.</small></span><label class="sw"><input type="checkbox" id="wxon" ${S.wx ? 'checked' : ''}><span></span></label></div></div>
+    <div class="group"><div class="item"><span class="ii">${I('cloud')}</span><span class="it">Hava durumunu göster<small>Biletlerde, seyahatlerde, takvimde ve bildirimlerde. Konumun koordinatı Open-Meteo'ya gönderilir; internet gerekir, son tahmin telefonda saklanır.</small></span><label class="sw"><input type="checkbox" id="wxon" ${S.wx ? 'checked' : ''}><span></span></label></div>
+      <div class="item"><span class="ii">${I('photo')}</span><span class="it">Yer fotoğraflarını otomatik getir<small>Müze, otel, restoran gibi biletlerin başlığına Wikipedia/Wikimedia Commons'tan serbest lisanslı fotoğraf. Yalnız yerin adı ve konumu gönderilir; fotoğraf bir kez indirilip telefonda saklanır.</small></span><label class="sw"><input type="checkbox" id="phon" ${phAuto() ? 'checked' : ''}><span></span></label></div></div>
     <div class="gtitle">Bilet okuma</div>
     <div class="group"><div class="item"><span class="ii">${I('scan')}</span><span class="it">Görsellerden metin oku (OCR)<small>Fotoğraf ve ekran görüntüsü biletlerdeki yazıları telefonda, internetsiz okur. Sayfa başına birkaç saniye sürer.</small></span><label class="sw"><input type="checkbox" id="ocr" ${S.ocr ? 'checked' : ''}><span></span></label></div></div>
     <div class="gtitle">Yedek</div>
@@ -4560,6 +4700,7 @@ function renderSettings(app, anim) {
   const lk = $('#lkh'); if (lk) lk.onchange = () => { S.lockHint = lk.checked; lsSet('lockHintOn', S.lockHint); nextHintSave(); };
   $$('.thc').forEach(b => b.onclick = () => { lsSet('dgTheme', b.dataset.theme); applyTheme(); const y = scrollY; renderSettings(app); window.scrollTo(0, y); });
   const ta = $('#thauto'); if (ta) ta.onchange = () => { lsSet('dgThemeAuto', ta.checked); applyTheme(); const y = scrollY; renderSettings(app); window.scrollTo(0, y); };
+  const pho = $('#phon'); if (pho) pho.onchange = () => lsSet('dgPlacePh', pho.checked);
   const wo = $('#wxon'); if (wo) wo.onchange = async () => { S.wx = wo.checked; await metaSet('wx', S.wx); syncReminders(); };
   const oc = $('#ocr'); if (oc) oc.onchange = async () => { S.ocr = oc.checked; await metaSet('ocr', S.ocr); };
   const ge = $('#geo'); if (ge) ge.onchange = async () => { S.geocode = ge.checked; await metaSet('geocode', S.geocode); };
@@ -4777,6 +4918,7 @@ async function shareTrip(name) {
     if (withPh) { photos = { cover: TP[name].cover, cpos: TP[name].cpos, items: phs, pages: [] }; for (const it of phs) { const p = await getOne('pages', it.id); if (p) photos.pages.push({ id: p.id, w: p.w, h: p.h, type: p.blob.type, data: B64.enc(await p.blob.arrayBuffer()) }); } }
     await getExp(); const expenses = EXP[name] ? { [name]: EXP[name] } : null;
     await getShop(); const shop = SHOP[name] && SHOP[name].items.length ? { [name]: SHOP[name] } : null;
+    for (const t of ts) if (t.hph && t.hph.id) { const p = await getOne('pages', t.hph.id); if (p) pages.push({ id: p.id, w: p.w, h: p.h, type: p.blob.type, data: B64.enc(await p.blob.arrayBuffer()) }); }
     if (shop) for (const id of shopPhotoIds(name)) { const p = await getOne('pages', id); if (p) pages.push({ id: p.id, w: p.w, h: p.h, type: p.blob.type, data: B64.enc(await p.blob.arrayBuffer()) }); }
     const plain = TE.encode(JSON.stringify({ app: 'dorago', kind: 'trip', format: 1, photos, expenses, shop, at: new Date().toISOString(), trip: { name, a: (r && r.a) || '', e: (r && r.e) || '', kind: (r && r.kind) || '', range: [g.a || '', g.e || ''] }, tickets, pages }));
     const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
@@ -4869,7 +5011,7 @@ async function importTripFile(buf) {
     for (const t of tickets) {
       if (!isNew(t) && !isUpd(t)) continue;
       const old = S.tickets.find(x => x.id === t.id);
-      const newPages = (t.pageIds || []).map(id => pageMap.get(id)).filter(Boolean).map(x => ({ id: x.id, w: x.w, h: x.h, blob: new Blob([B64.dec(x.data)], { type: x.type }) }));
+      const newPages = [...(t.pageIds || []), ...(t.hph && t.hph.id ? [t.hph.id] : [])].map(id => pageMap.get(id)).filter(Boolean).map(x => ({ id: x.id, w: x.w, h: x.h, blob: new Blob([B64.dec(x.data)], { type: x.type }) }));
       const removed = old ? pagesInUse((old.pageIds || []).filter(id => !(t.pageIds || []).includes(id)), t.id) : [];
       const ticket = { ...t, trip: name, thumb: t.thumb ? new Blob([B64.dec(t.thumb.data)], { type: t.thumb.type }) : null };
       await saveTicketDB(ticket, newPages, removed);
