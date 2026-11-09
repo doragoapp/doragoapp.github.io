@@ -1,7 +1,7 @@
 'use strict';
 /* DoraGo — çevrimdışı bilet cüzdanı */
 
-const APP_VER = '5.21';
+const APP_VER = '5.21.1';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -177,7 +177,7 @@ if (darkMQ) { const f = () => { if (lsGet('dgThemeAuto', false)) { applyTheme();
 const START_TAB = (() => { try { return JSON.parse(localStorage.getItem('dgStartTab')) || 'trips'; } catch (e) { return 'trips'; } })();
 const S = {
   view: 'home', filter: 'all', trip: '', q: '', showPast: false,
-  tickets: [], cur: null, draft: null, unlocked: false, tab: START_TAB, calMonth: '', calDay: '', bio: false, bioAvail: false, notif: { on: true, dayBefore: true, hours: 3 }, pendingTicket: false, mapApp: '', multi: null, sel: null, groupBy: 'trip', tripOpen: {}, hintLong: true,
+  tickets: [], cur: null, draft: null, unlocked: false, tab: START_TAB, calMonth: '', calDay: '', bio: false, bioAvail: false, notif: { on: true, dayBefore: true, hours: 3 }, pendingTicket: false, mapApp: '', multi: null, sel: null, groupBy: 'date', tripOpen: {}, hintLong: true,
   lockDelay: 60000, autoBright: true, pausedAt: 0, pickAt: 0, pendingShare: false,
 };
 
@@ -467,8 +467,7 @@ async function loadTickets() {
   S.autoBright = (await metaGet('autoBright')) ?? true;
   S.notif = Object.assign({ on: true, dayBefore: true, hours: 3 }, (await metaGet('notif')) || {});
   S.mapApp = (await metaGet('mapApp')) || '';
-  if ((await metaGet('groupByV')) !== 2) { await metaSet('groupBy', 'trip'); await metaSet('groupByV', 2); }
-  S.groupBy = (await metaGet('groupBy')) || 'trip';
+  S.groupBy = 'date'; // 5.21.1: Biletler yalnız tarihe göre; seyahat görünümü Seyahatler sekmesinde
   S.hintLong = !!(await metaGet('hintLong'));
   S.geocode = await metaGet('geocode'); if (S.geocode === undefined) S.geocode = null;
   S.ocr = (await metaGet('ocr')) !== false;
@@ -2832,11 +2831,9 @@ function bindHdr() {
   const bw = $('#btnWorld'); if (bw) bw.onclick = () => openWorld();
 }
 function bindHero() {
-  const byTrip = S.groupBy === 'trip';
   const hb = $('#hero'); if (hb) fillCovers(hb); if (hb) hb.onclick = () => {
     const tr = hb.dataset.trip;
     if (tr) { openTrip(tr); return; }
-    if (tr && byTrip) { const st = [...$$('.stub')].find(x => x.dataset.stub === tr); if (st && !st.classList.contains('open')) toggleStub(st); if (st) setTimeout(() => window.scrollTo({ top: st.getBoundingClientRect().top + scrollY - ($('.top').offsetHeight + 8), behavior: 'smooth' }), 80); }
     else openTicket(hb.dataset.id);
   }
 }
@@ -2850,7 +2847,7 @@ function renderHome(app, anim) {
     (!q || [t.title, t.trip, t.place, t.notes, t.from, t.to, t.flightNo].join(' ').toLocaleLowerCase(LANG).includes(q)));
   const usedTypes = new Set(S.tickets.map(t => t.type));
   const chips = [{ k: 'all', n: TX('Tümü'), i: '' }, ...TYPES.filter(t => usedTypes.has(t.k))];
-  const sel = S.sel, byTrip = S.groupBy === 'trip';
+  const sel = S.sel;
   const today = todayStr();
 
   let body = '', n = 0;
@@ -2859,46 +2856,8 @@ function renderHome(app, anim) {
     body = TL`<div class="empty"><div class="big">${dot('ticket', 'var(--acc)', 'xl')}</div><h3>Henüz bilet yok</h3>
       <p>PDF, ekran görüntüsü ya da fotoğraf olarak biletlerini ekle. İnternet olmadan da açılırlar.</p>
       <p>${A ? TX('Başka uygulamalardan <b>Paylaş → DoraGo</b> ile de gönderebilirsin.') : ''}</p></div>`;
-  } else if (!list.length && !(byTrip && S.filter === 'all' && !q && (S.trips || []).length)) {
+  } else if (!list.length) {
     body = TX('<div class="empty"><p>Bu filtreye uyan bilet yok.</p></div>');
-  } else if (byTrip) {
-    const groups = new Map();
-    for (const t of list) { const k = t.trip || ''; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(t); }
-    const key = t => (t.date || '9999') + 'T' + (t.time || '99:99');
-    if (S.filter === 'all' && !q) for (const r of S.trips || []) if (!groups.has(r.name)) groups.set(r.name, []);
-    const info = [...groups.entries()].filter(([k]) => k && (!S.tkind || tripKind(k) === S.tkind)).map(([name, ts]) => {
-      ts.sort((a, b) => key(a) < key(b) ? -1 : 1);
-      const dated = ts.filter(t => t.date), r = tripRec(name) || {};
-      let a = dated[0]?.date || '', e = dated.reduce((m, t) => (t.endDate || t.date) > m ? (t.endDate || t.date) : m, '');
-      if (r.a && (!a || r.a < a)) a = r.a; if (r.e && r.e > e) e = r.e;
-      return { name, ts, a, e, past: !!e && e < today };
-    });
-    info.sort((x, y) => x.past !== y.past ? (x.past ? 1 : -1) : x.past ? (x.a < y.a ? 1 : -1) : (x.a || '9') < (y.a || '9') ? -1 : 1);
-    const dayDiff = (a, b) => Math.round((new Date(b + 'T12:00') - new Date(a + 'T12:00')) / 864e5);
-    const stub = g => {
-      const open = S.tripOpen[g.name] ?? false;
-      const range = g.a ? (g.e && g.e !== g.a ? fmtRange(g.a, g.e) : fmtDate(g.a)) : '';
-      let cnt = '';
-      if (g.past) cnt = '';
-      else if (g.a && g.a > today) { const n = dayDiff(today, g.a); cnt = n === 1 ? TX('<b>Yarın</b>') : TL`<b>${n}</b>gün`; }
-      else if (g.a && g.a <= today && (g.e || g.a) >= today) cnt = TL`<b>${I('plane-tilt')}</b>şu an`;
-      const ghosts = Math.max(0, Math.min(g.ts.length - 1, 2));
-      return `<div class="stub ${g.past ? 'past' : ''} ${open ? 'open' : ''}" data-stub="${esc(g.name)}">
-        <div class="st-deck">${ghosts > 1 ? '<i class="gh g2"></i>' : ''}${ghosts > 0 ? '<i class="gh g1"></i>' : ''}
-        <div class="st-h"><button class="st-t" data-tg="${esc(g.name)}"><span class="st-ic">${(() => { const K = kindOf(tripKind(g.name)); return g.past ? dot(K ? K.ic : 'circle-check', '#888780') : K ? dot(K.ic, K.c) : dot('luggage', '#378ADD'); })()}</span><span class="st-tx"><b>${esc(g.name)}</b><small>${esc(range)}${range ? ' · ' : ''}${g.ts.length}${TX(' bilet')}${g.past ? TX(' · kullanıldı') : ''}</small></span><span class="st-tog">${cnt ? `<span class="st-perf"></span><span class="st-cnt">${cnt}</span>` : ''}<i class="st-chev">${I('chevron-down')}</i></span></button>
-        ${sel ? `<button class="tg-selall" data-tgsel="${esc(g.name)}">${g.ts.every(t => sel.has(t.id)) ? TX('Bırak') : TX('Seç')}</button>` : ''}</div></div>
-        <div class="st-b"${open ? '' : ' inert'}><div class="st-in">${dayed(g.ts, (t, i, mode) => (!t.date && (i === 0 || g.ts[i - 1].date) ? TL`<div class="st-sub" style="--k:${i}">${I('bookmark')} Gezilecekler · tarihsiz</div>` : '') + cardS(t, (t.endDate || t.date) && (t.endDate || t.date) < today, mode).replace('<button class="card ', `<button style="--k:${i}" class="card `), g.past)}${!sel && !g.past ? TL`<div class="st-btns" style="--k:${g.ts.length}"><button class="card st-add" data-tadd="${esc(g.name)}">${I('plus')}<span>Ekle</span></button><button class="card st-add" data-tsug="${esc(g.name)}">${I('map-search')}<span>Öneriler</span></button></div>` : ''}</div></div></div>`;
-    };
-    for (const g of info.filter(g => !g.past)) body += stub(g);
-    const rest = S.tkind ? [] : groups.get('') || [];
-    const { up, nod, past } = sortTickets(rest);
-    if (up.length || nod.length) body += TL`<div class="sec">Diğer biletler (${up.length + nod.length})</div>${dayed(up, (t, i, mode) => cardS(t, false, mode))}${nod.map(t => cardS(t, false)).join('')}`;
-    const pastTrips = info.filter(g => g.past), pastN = pastTrips.length + past.length;
-    if (pastN) {
-      const showP = S.showPast || !!sel;
-      body += TL`<div class="sec pastsec">${I('archive')} Geçmiş (${pastN})<button id="tgPast">${showP ? TX('Gizle') : TX('Göster')}</button></div>`;
-      if (showP) body += `<div class="pastbox">${pastTrips.map(stub).join('')}${past.map(t => cardS(t, true)).join('')}</div>`;
-    }
   } else {
     const { up, nod, past } = sortTickets(list);
     if (up.length) {
@@ -2925,7 +2884,7 @@ function renderHome(app, anim) {
       ${S.tickets.length ? TL`<div class="sbox"><input class="search" id="q" type="search" placeholder="Ara: başlık, seyahat, yer, uçuş…" value="${esc(S.q)}">${sel ? '' : `<button class="sflt${nF ? ' on' : ''}" id="fltBtn" aria-label="${TX('Filtre')}">${I('adjustments-horizontal')}${nF ? `<b>${nF}</b>` : ''}</button>`}</div>` : ''}
       ${sel ? TL`<div class="selov"><div class="top-row"><button class="icon-btn" id="selX" aria-label="Seçimi kapat">${I('x')}</button><h1>${sel.size} seçili</h1><button class="tbtn" id="selAll">${list.length && list.every(t => sel.has(t.id)) ? TX('Hiçbiri') : TX('Tümünü seç')}</button></div></div>` : ''}</div>`;
   const hero = !sel && !q ? statusBars() : '';
-  const ctl = S.tickets.length ? TL`<div class="viewctl"><div class="seg"><button class="${byTrip ? '' : 'on'}" data-gb="date">${I('calendar')} Tarih</button><button class="${byTrip ? 'on' : ''}" data-gb="trip">${I('luggage')} Seyahat</button></div></div>` : '';
+  const ctl = '';
   app.innerHTML = `<div class="page${animCls(anim)}">${top}
     ${hero}${ctl}
     ${!sel && !q && !lsGet('tripHintDone', false) && !allTrips().length ? TL`<div class="trip-hint"><span>${I('luggage')}</span><div><b>İlk seyahatini oluştur</b><p>Biletlerin seyahate göre toplanır; geri sayım, hava durumu ve öneriler bir arada görünür.</p><div class="th-b"><button class="btn pri" id="thNew">Seyahat oluştur</button><button class="btn" id="thX">Sonra</button></div></div></div>` : ''}
@@ -2939,7 +2898,6 @@ function renderHome(app, anim) {
   const qi = $('#q'); if (qi) qi.oninput = () => { S.q = qi.value; const pos = qi.selectionStart; renderHome(app); const n = $('#q'); n.focus(); n.setSelectionRange(pos, pos); };
   const fb = $('#fltBtn'); if (fb) fb.onclick = () => filterSheet(app, chips, trips);
   const tp = $('#tgPast'); if (tp) tp.onclick = () => { S.showPast = !S.showPast; renderHome(app); };
-  $$('[data-gb]').forEach(b => b.onclick = async () => { if (S.groupBy === b.dataset.gb) return; S.groupBy = b.dataset.gb; await metaSet('groupBy', S.groupBy); renderHome(app, 'stagger'); });
   $$('[data-tmenu]').forEach(b => b.onclick = () => tripMenu(b.dataset.tmenu));
   $$('[data-tgsel]').forEach(b => b.onclick = () => { const ts = list.filter(t => t.trip === b.dataset.tgsel), all = ts.every(t => sel.has(t.id)); ts.forEach(t => all ? sel.delete(t.id) : sel.add(t.id)); renderHome(app); });
   const hideHint = async () => { if (S.hintLong) return; S.hintLong = true; await metaSet('hintLong', true); };
@@ -2955,7 +2913,6 @@ function renderHome(app, anim) {
   $$('.card:not(.st-add)').forEach(c => bindCardPress(c,
     () => { if (S.sel) { const id = c.dataset.id; S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); renderHome(app); return; } openTicket(c.dataset.id); },
     () => { if (!S.sel) S.sel = new Set(); S.sel.add(c.dataset.id); renderHome(app); }));
-  $$('.st-t').forEach(b => bindCardPress(b, () => { const st = b.closest('.stub'); toggleStub(st); if (!S.sel && st.classList.contains('open') && !lsGet('stubLongHint', false)) { lsSet('stubLongHint', true); toast(TX('İpucu: seyahat sayfası için basılı tut'), 3200); } }, S.sel ? null : () => openTrip(b.dataset.tg)));
   $$('[data-tsug]').forEach(b => b.onclick = () => tripSuggest(b.dataset.tsug));
   $$('[data-tadd]').forEach(b => b.onclick = () => addNew(b.dataset.tadd));
   bindStatusBars(app); bindHdr(); bindDays(app); fillDayWx(app);
@@ -2963,21 +2920,6 @@ function renderHome(app, anim) {
   const thx = $('#thX'); if (thx) thx.onclick = () => { lsSet('tripHintDone', true); renderHome(app); };
 ;
   fillCardWx(app); fitTop();
-}
-
-/* koçanı aç/kapat: biletler desteden sırayla açılır */
-function toggleStub(st) {
-  if (!st) return;
-  const k = st.dataset.stub, body = $('.st-b', st), open = !st.classList.contains('open');
-  S.tripOpen[k] = open;
-  body.style.height = (open ? 0 : body.scrollHeight) + 'px';
-  body.offsetHeight; // reflow
-  st.classList.toggle('open', open);
-  if (open) { body.removeAttribute('inert'); fillCardWx(st); } else body.setAttribute('inert', '');
-  body.style.height = (open ? $('.st-in', st).scrollHeight : 0) + 'px';
-  try { navigator.vibrate && navigator.vibrate(8); } catch (e) {}
-  clearTimeout(st._t); st._t = setTimeout(() => { if (open) body.style.height = 'auto'; }, 520);
-  if (open) setTimeout(() => { const r = st.getBoundingClientRect(); if (r.bottom > innerHeight - 90) window.scrollBy({ top: Math.min(r.top - 80, r.bottom - innerHeight + 110), behavior: 'smooth' }); }, 360);
 }
 
 /* ---------- seyahatler: biletlerden + ayrıca açılan (boş/tarihli) kayıtlar ---------- */
@@ -3024,17 +2966,15 @@ function tripDialog({ title, name = '', a = '', e = '', ok = TX('Oluştur'), kin
 }
 async function newTrip(sug = '') {
   const r = await tripDialog({ title: TX('Yeni seyahat'), name: sug }); if (!r) return null;
-  if (allTrips().some(g => g.name === r.name)) { toast(TL`"${r.name}" zaten var`); S.groupBy = 'trip'; S.tripOpen[r.name] = true; render(); return r.name; }
+  if (allTrips().some(g => g.name === r.name)) { toast(TL`"${r.name}" zaten var`); return r.name; }
   (S.trips = S.trips || []).push({ name: r.name, a: r.a, e: r.e, createdAt: Date.now(), ...(r.kind ? { kind: r.kind } : {}) }); await saveTripRecs();
   lsSet('tripHintDone', true);
   return r.name;
 }
 async function createTripFlow() {
   const name = await newTrip(); if (!name) return;
-  if (S.groupBy !== 'trip') { S.groupBy = 'trip'; await metaSet('groupBy', 'trip'); }
-  S.tripOpen[name] = true; S.tab = 'list'; if (S.view !== 'home') go('home'); else render();
+  S.tab = 'trips'; await openTrip(name);
   toast(TL`"${name}" oluşturuldu · biletleri ekleyebilirsin`, 3000);
-  setTimeout(() => { const st = [...$$('.stub')].find(x => x.dataset.stub === name); if (st) window.scrollTo({ top: st.getBoundingClientRect().top + scrollY - ($('.top').offsetHeight + 8), behavior: 'smooth' }); }, 120);
 }
 
 /* ---------- toplu işlemler ---------- */
@@ -3151,7 +3091,7 @@ async function tripMenu(name, onPage) {
     if (!await dialog({ title: TL`"${name}" silinsin mi?`, text: TL`Bu seyahatteki <b>${ts.length} bilet</b> ve hatırlatmaları silinecek.`, ok: TX('Devam'), danger: true })) return;
     if (await bulkDelete(ts.map(t => t.id), TX('Emin misin? Bu işlem geri alınamaz.'))) { S.trips = (S.trips || []).filter(x => x.name !== name); await saveTripRecs(); await dropTripPhotos(name); if (S.view === 'trip') { S.retTrip = null; go('home', 'back'); } else render(); }
   } else if (v === 'select') {
-    S.sel = new Set(ts.map(t => t.id)); S.groupBy = 'trip'; S.tripOpen[name] = true; if (S.view === 'trip') { S.retTrip = null; go('home', 'back'); } else render();
+    S.sel = new Set(ts.map(t => t.id)); S.trip = name; S.tab = 'list'; if (S.view === 'trip') { S.retTrip = null; go('home', 'back'); } else render();
   } else if (v === 'route') tripRoute(name);
   else if (v === 'add') addNew(name);
   else if (v === 'share') shareTrip(name);
@@ -4863,7 +4803,7 @@ async function importTripFile(buf) {
   const nPh = Math.min(data.photos && data.photos.items ? data.photos.items.filter(i => !havePh.has(i.id)).length : 0, PHOTO_MAX - havePh.size);
   await getShop(); const sIn = ((data.shop || {})[name] || {}).items || [], sCur = shopRec(name).items;
   const nSh = sIn.filter(i => { const o = sCur.find(x => x.id === i.id); return !o || (i.updatedAt || 0) > (o.updatedAt || 0); }).length;
-  if (!nNew && !nUpd && !nPh && !nSh) { toast(TL`"${name}" zaten güncel`); S.groupBy = 'trip'; S.tripOpen[name] = true; S.tab = 'list'; if (S.view !== 'home') go('home'); else render(); return; }
+  if (!nNew && !nUpd && !nPh && !nSh) { toast(TL`"${name}" zaten güncel`); S.tab = 'trips'; await openTrip(name); return; }
   const parts = [nNew && TL`${nNew} yeni bilet`, nUpd && TL`${nUpd} güncellenmiş bilet`, nPh > 0 && TL`${nPh} anı fotoğrafı`, nSh > 0 && TL`${nSh} alınacak`].filter(Boolean).join(', ').replace(/, ([^,]*)$/, ' ve $1');
   if (!await dialog({ title: TL`"${name}" eklensin mi?`, text: TL`${parts} DoraGo'na eklenecek.`, ok: TX('Ekle') })) return;
   busy(TX('Seyahat ekleniyor…'));
@@ -4890,9 +4830,7 @@ async function importTripFile(buf) {
     if ((tr.a || !tickets.length || tr.kind) && !tripRec(name)) { (S.trips = S.trips || []).push({ name, a: tr.a || '', e: tr.e || '', createdAt: Date.now(), ...(tr.kind ? { kind: tr.kind } : {}) }); await saveTripRecs(); }
     else if (tr.kind && tripRec(name) && !tripRec(name).kind) { tripRec(name).kind = tr.kind; await saveTripRecs(); }
     busy(false);
-    if (S.groupBy !== 'trip') { S.groupBy = 'trip'; await metaSet('groupBy', 'trip'); }
-    S.tripOpen[name] = true; S.tab = 'list'; lsSet('tripHintDone', true);
-    if (S.view !== 'home') go('home'); else render();
+    S.tab = 'trips'; lsSet('tripHintDone', true); await openTrip(name);
     toast(TL`"${name}" eklendi · ${n} bilet`, 3200); syncReminders();
   } catch (e) { console.error(e); busy(false); toast(TX('Eklenemedi: ') + (e.message || e)); }
 }
