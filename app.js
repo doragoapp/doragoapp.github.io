@@ -1,7 +1,7 @@
 'use strict';
 /* DoraGo — çevrimdışı bilet cüzdanı */
 
-const APP_VER = '5.23';
+const APP_VER = '5.23.1';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -110,7 +110,7 @@ let dlgClose = null;
 function dialog({ title, text, ok = TX('Tamam'), cancel = TX('Vazgeç'), danger = false }) {
   return new Promise(res => {
     const ov = document.createElement('div'); ov.className = 'ov';
-    ov.innerHTML = `<div class="dlg"><h3>${esc(title)}</h3><p>${text}</p><div class="row2">
+    ov.innerHTML = `<div class="dlg"><h3>${esc(title)}</h3>${text ? `<p>${text}</p>` : ''}<div class="row2">
       ${cancel ? `<button class="btn" data-a="0">${esc(cancel)}</button>` : ''}
       <button class="btn ${danger ? 'dan' : 'pri'}" data-a="1">${esc(ok)}</button></div></div>`;
     const close = v => { ov.remove(); dlgClose = null; res(v); };
@@ -415,7 +415,13 @@ async function forgotPin() {
 }
 async function unlock() {
   S.unlocked = true; clearInterval(lockTimer);
-  if (!S.loaded) { await loadTickets(); S.loaded = true; S.anim = 'fade'; render(); }
+  if (!S.loaded) {
+    await loadTickets(); const pl = preload();
+    // 5.23.1: seyahat verileri (harita, kapaklar, vize…) hazır olsun ki ekran bir kez ve tam çizilsin (en çok 1,5 sn bekle)
+    await Promise.race([pl, new Promise(r => setTimeout(r, 1500))]);
+    S.loaded = true; S.anim = 'fade'; render();
+    if (TRIPS_READY !== 2) pl.then(() => { if (S.view === 'home') quietRender(); });
+  }
   const host = $('#lock'); host.classList.add('out');
   setTimeout(() => { if (!S.unlocked) return; host.classList.add('hidden'); host.classList.remove('out'); host.innerHTML = ''; }, 290);
   if (S.pendingText) { S.pendingText = false; setTimeout(takeSharedText, 350); }
@@ -2307,7 +2313,7 @@ const tripHasCover = name => !!(TP && TP[name] && TP[name].items.length);
 let ART_P = null;
 function artReady() {
   if (window.WORLD && TP) return true;
-  if (!ART_P) ART_P = Promise.all([loadWorld(), getTP()]).then(() => { if (S.view === 'home' || S.view === 'trip' || S.view === 'view') render(); });
+  if (!ART_P) ART_P = Promise.all([loadWorld(), getTP()]).then(() => { if (S.view === 'home' || S.view === 'trip' || S.view === 'view') quietRender(); });
   return false;
 }
 /* data-cov="seyahat" olan öğelere kapak fotoğrafını koy */
@@ -2369,8 +2375,8 @@ async function alignDialog(b, cp0, title) {
   fr.addEventListener('pointerup', up); fr.addEventListener('pointercancel', up);
   fr.addEventListener('wheel', e => { e.preventDefault(); setZ(z * (e.deltaY < 0 ? 1.08 : 1 / 1.08)); }, { passive: false });
   zr.oninput = () => setZ(+zr.value);
-  const a = await new Promise(res => ov.addEventListener('click', e => { const bt = e.target.closest('[data-a]'); if (bt) res(bt.dataset.a); else if (e.target === ov) res('0'); }));
-  ov.remove();
+  const a = await new Promise(res => { dlgClose = () => res('0'); ov.addEventListener('click', e => { const bt = e.target.closest('[data-a]'); if (bt) res(bt.dataset.a); else if (e.target === ov) res('0'); }); });
+  ov.remove(); dlgClose = null;
   if (a === '0') return undefined;
   if (a === '2') return null;
   const f = focal(); return { x: +f.x.toFixed(4), y: +f.y.toFixed(4), z: +z.toFixed(3) };
@@ -2461,7 +2467,7 @@ async function phAutoFetch(t) {
   PH_BUSY.add(t.id);
   try {
     const cs = await placeCands(t), best = cs.find(c => c.sim >= .5);
-    if (best) { await phFromCand(t, best); if (S.view === 'view' && S.cur && S.cur.t && S.cur.t.id === t.id) render(); }
+    if (best) { await phFromCand(t, best); if (S.view === 'view' && S.cur && S.cur.t && S.cur.t.id === t.id) quietRender(); }
     else if (cs.length || hasC(t)) await phMark(t, { none: Date.now() });
   } catch (e) {} finally { PH_BUSY.delete(t.id); }
 }
@@ -2490,8 +2496,8 @@ async function placePhotoSheet(t) {
     g.innerHTML = cands.length ? cands.map((c, i) => `<button class="ppi" data-c="${i}" style="background-image:url('${esc(c.thumb)}')" aria-label="${esc(c.title)}"></button>`).join('') : TL`<div class="ppl">Bu yer için fotoğraf bulunamadı</div>`;
   };
   fill();
-  const act = await new Promise(res => ov.addEventListener('click', e => { const c = e.target.closest('[data-c]'); if (c) return res('c' + c.dataset.c); const bt = e.target.closest('[data-a]'); if (bt) res(bt.dataset.a); else if (e.target === ov) res('x'); }));
-  ov.remove();
+  const act = await new Promise(res => { dlgClose = () => res('x'); ov.addEventListener('click', e => { const c = e.target.closest('[data-c]'); if (c) return res('c' + c.dataset.c); const bt = e.target.closest('[data-a]'); if (bt) res(bt.dataset.a); else if (e.target === ov) res('x'); }); });
+  ov.remove(); dlgClose = null;
   try {
     if (act[0] === 'c') { busy(TX('Fotoğraf indiriliyor…')); try { t = await phFromCand(t, cands[+act.slice(1)]); } finally { busy(false); } render(); }
     else if (act === 'gal') {
@@ -3367,7 +3373,10 @@ function tripCardHtml(g) {
   }
   return `<button class="tcard" data-tn="${esc(name)}" style="--kc:${kc}">${top}${det.length ? `<div class="tcg">${det.join('')}</div>` : ''}${foot}</button>`;
 }
-let TRIPS_READY = 0;
+let TRIPS_READY = 0, PRELOAD = null;
+function preload() { if (!PRELOAD) { const p = tripsData(); TRIPS_READY = 1; PRELOAD = p.catch(() => {}).then(() => { TRIPS_READY = 2; }); } return PRELOAD; }
+/* arkadan yüklenen veriyle yeniden çizim: animasyonlar tekrar oynamasın */
+function quietRender() { const a = $('#app'); a.classList.add('noanim'); render(); setTimeout(() => a.classList.remove('noanim'), 400); }
 function renderTrips(app, anim) {
   artReady();
   const all = allTrips();
@@ -3380,7 +3389,7 @@ function renderTrips(app, anim) {
   if (!all.length) body = TL`<div class="empty"><div class="big">${dot('map-2', 'var(--acc)', 'xl')}</div><h3>Henüz seyahat yok</h3>
       <p>Biletlerini bir seyahatte topla; bavul, masraf ve vize tek sayfada.</p>
       <div class="ebtns"><button class="btn pri" id="tlNew">${I('plus')} Yeni seyahat</button><button class="btn" id="tlWorld">${I('world')} Haritadan</button></div></div>`;
-  if (!TRIPS_READY) { TRIPS_READY = 1; tripsData().then(() => { TRIPS_READY = 2; if (S.view === 'home' && S.tab === 'trips') render(); }); }
+  if (!TRIPS_READY) { TRIPS_READY = 1; tripsData().then(() => { TRIPS_READY = 2; if (S.view === 'home' && S.tab === 'trips') quietRender(); }); }
   const hero = (THEMES[curTheme()].hero && S.tickets.length ? heroHtml() : '') + statusBars();
   app.innerHTML = TL`<div class="page${animCls(anim)}">
     <div class="top">${header(TX('Seyahatler'), hdrBtns())}</div>
@@ -5595,6 +5604,7 @@ if (!A && 'serviceWorker' in navigator && (location.protocol === 'https:' || loc
       if (!LANG_SET) { lsSet('dgLang', 'tr'); if (lsGet('dgHome', null) == null) lsSet('dgHome', 'TR'); if (LANG !== 'tr') { location.reload(); return; } }
       // seçilen kilit süresi uygulama yeniden başlatıldığında da geçerli: süre dolmadıysa PIN sorma
       const ld = (await metaGet('lockDelay')) ?? 60000, last = lsGet('lastActive', 0);
+      preload();
       if (ld === -1 || (ld > 0 && last && Date.now() - last < ld && Date.now() >= last)) { S.lockDelay = ld; await unlock(); }
       else showLock();
     }
