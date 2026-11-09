@@ -1,7 +1,7 @@
 'use strict';
 /* DoraGo — çevrimdışı bilet cüzdanı */
 
-const APP_VER = '5.20.1';
+const APP_VER = '5.20.2';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -3247,7 +3247,9 @@ function renderTrips(app, anim) {
   if (up.length) body += TL`<div class="tlh">Yaklaşan · ${up.length}</div>` + up.map(tripCardHtml).join('');
   let yr = '';
   for (const g of past) { const y = (g.a || g.e || '').slice(0, 4); if (y !== yr) { yr = y; body += TL`<div class="tlh">Geçmiş · ${y}</div>`; } body += tripCardHtml(g); }
-  if (!all.length) body = TL`<div class="empty"><p>Henüz seyahat yok.</p><p><button class="btn pri" id="tlNew">${I('plus')} Yeni seyahat</button></p></div>`;
+  if (!all.length) body = TL`<div class="empty"><div class="big">${dot('map-2', 'var(--acc)', 'xl')}</div><h3>Henüz seyahat yok</h3>
+      <p>Biletlerini bir seyahatte topla; bavul, masraf ve vize tek sayfada.</p>
+      <div class="ebtns"><button class="btn pri" id="tlNew">${I('plus')} Yeni seyahat</button><button class="btn" id="tlWorld">${I('world')} Haritadan</button></div></div>`;
   if (!TRIPS_READY) { TRIPS_READY = 1; tripsData().then(() => { TRIPS_READY = 2; if (S.view === 'home' && S.tab === 'trips') render(); }); }
   const hero = (THEMES[curTheme()].hero && S.tickets.length ? heroHtml() : '') + statusBars();
   app.innerHTML = TL`<div class="page${animCls(anim)}">
@@ -3257,6 +3259,7 @@ function renderTrips(app, anim) {
     <button class="fab" id="add" aria-label="Ekle">${I('plus')}</button>${tabsBar()}`;
   bindShell(app); bindHdr(); bindHero(); bindStatusBars(app);
   const nw = $('#tlNew'); if (nw) nw.onclick = () => createTripFlow();
+  const nwW = $('#tlWorld'); if (nwW) nwW.onclick = () => openWorld();
   $$('[data-tn]').forEach(b => b.onclick = () => openTrip(b.dataset.tn));
   fillCovers(app); fillDayWx(app); fitTop();
 }
