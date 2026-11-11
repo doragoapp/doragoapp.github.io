@@ -1,9 +1,9 @@
 /* DoraGo web: çevrimdışı çalışma. Biletler bu dosyada değil, telefonun kendi deposunda (IndexedDB) durur. */
-const VER = 'dorago-web-40';
+const VER = 'dorago-web-41';
 const CORE = ['./', 'index.html', 'i18n.js', 'lang-en.js', 'app.js', 'extract.js', 'icons.js', 'logo.png', 'travel.json', 'pdf.min.mjs', 'pdf.worker.min.mjs', 'zxing.min.js',
   'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 // OCR dosyaları büyük (~10 MB): kurulumdan sonra arka planda indirilir
-const LATER = ['world.js', 'countries.js', 'visa.js', 'ocr/tesseract.min.js', 'ocr/worker.min.js', 'ocr/tesseract-core-simd-lstm.wasm.js', 'ocr/tesseract-core-lstm.wasm.js', 'ocr/lang/tur.traineddata.gz', 'ocr/lang/eng.traineddata.gz'];
+const LATER = ['world.js', 'countries.js', 'phrases.js', 'visa.js', 'ocr/tesseract.min.js', 'ocr/worker.min.js', 'ocr/tesseract-core-simd-lstm.wasm.js', 'ocr/tesseract-core-lstm.wasm.js', 'ocr/lang/tur.traineddata.gz', 'ocr/lang/eng.traineddata.gz'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VER).then(c => c.addAll(CORE.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));

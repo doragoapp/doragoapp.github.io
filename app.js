@@ -1,7 +1,7 @@
 'use strict';
 /* DoraGo — çevrimdışı bilet cüzdanı */
 
-const APP_VER = '5.23.2';
+const APP_VER = '5.24';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -522,6 +522,7 @@ function render() {
   else if (S.view === 'stats') renderStats(app, anim);
   else if (S.view === 'pack') renderPack(app, anim);
   else if (S.view === 'cinfo') renderCInfo(app, anim);
+  else if (S.view === 'phr') renderPhr(app, anim);
   else if (S.view === 'trip') renderTrip(app, anim);
   else if (S.view === 'exp') renderExp(app, anim);
   else if (S.view === 'docs') renderDocs(app, anim);
@@ -533,9 +534,9 @@ function go(view, anim) {
   if (S.pendingReload && view === 'home') { S.pendingReload = false; setTimeout(reloadForUpdate, 300); }
   if (view !== 'home') S.sel = null;
   if (S.view === 'view' && view !== 'view') brightness(false);
-  const order = { home: 0, docs: 1, world: 2, trip: 1, settings: 1, view: 2, multi: 1, stats: 1, pack: 2, cinfo: 2, exp: 2, shop: 2, edit: 3 };
+  const order = { home: 0, docs: 1, world: 2, trip: 1, settings: 1, view: 2, multi: 1, stats: 1, pack: 2, cinfo: 2, phr: 2, exp: 2, shop: 2, edit: 3 };
   if (view === 'home' && S.view === 'pack' && S.packRet && S.cur) { view = 'view'; S.packRet = false; }
-  else if (view === 'home' && S.retTrip && ['view', 'pack', 'cinfo', 'edit', 'exp', 'shop'].includes(S.view)) view = 'trip';
+  else if (view === 'home' && S.retTrip && ['view', 'pack', 'cinfo', 'phr', 'edit', 'exp', 'shop'].includes(S.view)) view = 'trip';
   if (view !== 'pack') S.packRet = false;
   S.anim = anim || (view === 'view' ? 'up' : (order[view] ?? 0) >= (order[S.view] ?? 0) ? 'fwd' : 'back');
   /* 5.23.2: liste/seyahat sayfasından derine inerken kaydırma yerini sakla, geri dönünce aynı yere (açılan bileti ortala) */
@@ -913,6 +914,75 @@ async function tripCountry(name) {
 }
 const diffTxt = h => { if (h == null) return ''; const hn = homeName(); return h === 0 ? TL`${hn} ile aynı saat` : TL`${hn}${ablSfx(hn)} ${Math.abs(h)} saat ${h > 0 ? TX('ileride') : TX('geride')}`; };
 async function openCInfo(name) { busy(TX('Hazırlanıyor…')); const ci = await tripCountry(name); busy(false); if (!ci) { toast(TX('Bu seyahatin ülkesi bulunamadı')); return; } S.cinfo = { name, ci }; go('cinfo'); }
+/* ---------- 5.24: konuşma kılavuzu (www/phrases.js, tembel) ---------- */
+const PHR_LANGS = new Set('en tr de fr it es pt nl el ar ru ja zh ko th cs hu pl hr ka'.split(' '));
+const PHR_ALIAS = { sr: 'hr', bs: 'hr', cnr: 'hr' };
+let PHR_P = null, PHR_TRIED = false;
+function loadPhr() {
+  if (window.PHR) return Promise.resolve(window.PHR);
+  if (!PHR_P) PHR_P = new Promise(res => { const s = document.createElement('script'); s.src = 'phrases.js'; s.onload = () => res(window.PHR || null); s.onerror = () => { PHR_P = null; res(null); }; document.head.appendChild(s); });
+  return PHR_P;
+}
+/* seyahatin hedef dili (kılavuz varsa ve uygulama dilinden farklıysa) — {l: kılavuz dili, o: ülkenin dili} */
+function tripPhrLang(name) {
+  const d = tripDest(name); if (!d || !d.cc || d.cc === HOME_CC) return null;
+  if (!window.CINFO) { if (!PHR_TRIED) { PHR_TRIED = true; loadCInfo().then(c => { if (c && S.view === 'trip') quietRender(); }); } return null; }
+  const o = CINFO[d.cc] && CINFO[d.cc].lang, l = PHR_ALIAS[o] || o;
+  return l && PHR_LANGS.has(l) && l !== LANG ? { l, o } : null;
+}
+const capFirst = x => x ? x.charAt(0).toLocaleUpperCase(LANG) + x.slice(1) : x;
+async function openPhr(name) {
+  const pl = tripPhrLang(name); if (!pl) return;
+  busy(TX('Hazırlanıyor…')); const P = await loadPhr(); busy(false);
+  if (!P) { toast(TX('Kılavuz açılamadı')); return; }
+  S.phr = { name, ...pl }; if (!S.phrCat) S.phrCat = 'b'; go('phr');
+}
+function phrRow(i) {
+  const P = window.PHR, { l } = S.phr, it = P.items[i], tg = P.L[l][i];
+  const [t, rom] = Array.isArray(tg) ? tg : [tg, ''];
+  return { src: LANG === 'tr' ? it[1] : it[2], t, rom };
+}
+function renderPhr(app, anim) {
+  const P = window.PHR; if (!P || !S.phr) { go('home', 'back'); return; }
+  const { name, l, o } = S.phr, cat = S.phrCat || 'b';
+  const tabs = P.cats.map(c => `<button class="phc${c[0] === cat ? ' on' : ''}" data-c="${c[0]}">${I(c[3])} ${esc(LANG === 'tr' ? c[1] : c[2])}</button>`).join('');
+  const rows = P.items.map((it, i) => it[0] === cat ? i : -1).filter(i => i >= 0).map(i => {
+    const r = phrRow(i);
+    return `<div class="phr" data-i="${i}"><span class="pht"><small>${esc(r.src)}</small><b dir="auto" lang="${l}">${esc(r.t)}</b>${r.rom ? `<em>${esc(r.rom)}</em>` : ''}</span><button class="icon-btn phs" data-sp="${i}" aria-label="Dinle">${I('volume')}</button></div>`;
+  }).join('');
+  const alias = o && o !== l ? TL`<p class="snote">${capFirst(langName(l))} kalıplar; ${capFirst(langName(o))} konuşanlar da büyük ölçüde anlar.</p>` : '';
+  app.innerHTML = TL`<div class="page phrp${animCls(anim)}">
+    <div class="phtop"><div class="bar"><button class="icon-btn" id="back" aria-label="Geri">←</button><div class="vt"><b>${esc(capFirst(langName(l)))}</b><small>Konuşma kılavuzu · ${esc(name)}</small></div></div>
+    <div class="phtabs">${tabs}</div></div>
+    <div class="sbody"><div class="phl">${rows}</div>${alias}
+    <p class="snote">Kalıba dokun: büyük yazıyla göster. Çeviriler günlük kullanım içindir.</p></div></div>`;
+  $('#back').onclick = () => go('home', 'back');
+  $$('.phc', app).forEach(b => b.onclick = () => { S.phrCat = b.dataset.c; quietRender(); window.scrollTo(0, 0); });
+  $$('.phr', app).forEach(r => r.onclick = e => { if (e.target.closest('.phs')) return; phrShow(+r.dataset.i); });
+  $$('.phs', app).forEach(b => b.onclick = () => phrSpeak(+b.dataset.sp));
+  const on = $('.phc.on', app); if (on) on.scrollIntoView({ inline: 'center', block: 'nearest' });
+}
+function phrSpeak(i) {
+  const r = phrRow(i), l = S.phr.l, txt = r.t.replace(/…/g, ' ').replace(/\s*\/\s*/g, ', ');
+  window.onSpeak = st => { if (st === 'nolang') toast(TL`Telefonda ${langName(l)} ses paketi yüklü değil (Ayarlar → Metin okuma)`, 4000); else if (st === 'noengine') toast(TX('Sesli okuma bu telefonda kullanılamıyor')); };
+  if (A && A.speak) { A.speak(txt, l); return; }
+  try {
+    const ss = window.speechSynthesis; if (!ss) throw 0;
+    const u = new SpeechSynthesisUtterance(txt); u.lang = l; u.rate = .85;
+    const vs = ss.getVoices(); if (vs.length && !vs.some(v => (v.lang || '').toLowerCase().startsWith(l))) { onSpeak('nolang'); return; }
+    ss.cancel(); ss.speak(u);
+  } catch (e) { onSpeak('noengine'); }
+}
+function phrShow(i) {
+  const r = phrRow(i), l = S.phr.l;
+  const ov = document.createElement('div'); ov.className = 'ov phov';
+  ov.innerHTML = TL`<div class="phbig"><small>${esc(r.src)}</small><div class="phbt" dir="auto" lang="${l}">${esc(r.t)}</div>${r.rom ? `<em>${esc(r.rom)}</em>` : ''}
+    <div class="phbb"><button class="btn" id="phSay">${I('volume')} Dinle</button><button class="btn" id="phX">Kapat</button></div></div>`;
+  document.body.appendChild(ov); tick();
+  const close = () => { ov.remove(); dlgClose = null; if (A && A.stopSpeak) A.stopSpeak(); };
+  dlgClose = close;
+  ov.onclick = e => { if (e.target.closest('#phSay')) { phrSpeak(i); return; } close(); };
+}
 function renderCInfo(app, anim) {
   const { name, ci } = S.cinfo || {}; if (!ci) { go('home'); return; }
   const row = (ic, k, v, sub) => v ? `<div class="vrow"><span class="vri">${I(ic)}</span><span class="vrt"><small>${esc(k)}</small><b>${esc(v)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</span></div>` : '';
@@ -2615,6 +2685,7 @@ function renderTrip(app, anim) {
   const pc = packCount(name), foreign = tripForeign(name), ended = ts.some(t => t.date && hasEnded(t)), sc = shopCount(name);
   const tile = (id, ic, label, cls = '', badge = 0) => `<button class="tic ${cls}" id="${id}"><span class="tib">${I(ic)}${badge === '!' || badge > 0 ? `<i class="tbd">${badge > 99 ? '99+' : badge}</i>` : ''}</span><small>${esc(label)}</small></button>`;
   const vw = tripCCs(name).length && !g.past ? worstOf(visaCheck(name)) : null;
+  const phl = tripPhrLang(name);
   const tiles = [
     tile('tmPack', 'briefcase', TX('Bavul'), pc && pc[0] === pc[1] ? 'ok' : '', pc ? pc[1] - pc[0] : 0),
     tile('tmShop', 'shopping-cart', TX('Alınacak'), sc && sc[0] === sc[1] ? 'ok' : '', sc ? sc[1] - sc[0] : 0),
@@ -2624,7 +2695,7 @@ function renderTrip(app, anim) {
     !g.past ? tile('tmSug', 'map-search', TX('Öneriler')) : '',
     ended ? tile('tmCard', 'photo', TX('Kartpostal')) : '',
     tile('tmPdf', 'file-text', TX('PDF')),
-    tile('tmMem', 'camera', TX('Anılar'), '', 0),
+    phl ? tile('tmLang', 'language', capFirst(langName(phl.l))) : tile('tmMem', 'camera', TX('Anılar'), '', 0),
   ].filter(Boolean);
   const kd = kindOf(tripKind(name)), hasCov = ph.length > 0, art = hasCov || !artReady() ? '' : tripMapSvg(name), flags = tripFlags(name);
   const memSec = ph.length ? TL`<div class="tsec" id="tpMem"><b>Anılar</b><span>${ph.length} / ${PHOTO_MAX}</span></div><div class="pstrip">${strip}</div>` : '';
@@ -2660,7 +2731,7 @@ function renderTrip(app, anim) {
     b.onclick = () => { if (long) return; const ids = ph.map(p => p.id); openLightbox(ids.map(id => PHB.get(id)).filter(Boolean), ids.indexOf(b.dataset.ph)); };
   });
   const on = (id, f) => { const e = $('#' + id); if (e) e.onclick = f; };
-  on('tmPack', () => openPack(name)); on('tmShop', () => openShop(name)); on('tmExp', () => openExp(name)); on('tmPdf', () => pdfDialog(name)); on('tmVisa', () => tripVisaSheet(name)); on('tmInfo', () => openCInfo(name)); on('tmCard', () => tripPostcard(name)); on('tmSug', () => tripSuggest(name)); on('tmMem', goMem);
+  on('tmPack', () => openPack(name)); on('tmShop', () => openShop(name)); on('tmExp', () => openExp(name)); on('tmPdf', () => pdfDialog(name)); on('tmVisa', () => tripVisaSheet(name)); on('tmInfo', () => openCInfo(name)); on('tmCard', () => tripPostcard(name)); on('tmSug', () => tripSuggest(name)); on('tmMem', goMem); on('tmLang', () => openPhr(name));
   on('tpRoute', () => tripRoute(name)); on('tpAdd', () => addNew(name)); on('tpQuick', () => quickPlace(name));
   $$('.tplan .card').forEach(c => bindCardPress(c, () => openTicket(c.dataset.id)));
   bindDays(app); fillDayWx(app);
@@ -4174,6 +4245,69 @@ function apHint(code) {
   const c = apCity(code); return c ? `${c} · ${apName(code)}` : TX('Havalimanı bulunamadı');
 }
 
+/* ---------- 5.24: havalimanı / havayolu arama (çevrimdışı, travel.json) ---------- */
+const MAJOR_LIST = 'IST SAW ESB ADB AYT DLM BJV TZX ADA LHR LGW STN LTN LCY MAN EDI CDG ORY NCE MRS LYS FRA MUC BER DUS HAM STR CGN AMS EIN RTM BRU CRL FCO CIA MXP LIN BGY VCE NAP BLQ FLR PSA CTA PMO MAD BCN AGP PMI ALC VLC SVQ IBZ LIS OPO FAO ZRH GVA BSL VIE PRG BUD WAW KRK ATH SKG HER RHO CFU JTR JMK CPH ARN OSL HEL DUB KEF OTP SOF BEG ZAG SPU DBV LJU TIA SKP TBS BUS GYD EVN DXB AUH DOH JED RUH MED KWI BAH MCT AMM BEY CAI HRG SSH RAK CMN TUN TLV JFK EWR LGA BOS IAD ORD LAX SFO MIA ATL DFW SEA LAS YYZ YUL YVR MEX CUN GRU GIG EZE BOG LIM SCL NRT HND KIX ICN GMP PEK PKX PVG SHA HKG TPE BKK DMK HKT CNX SGN HAN KUL SIN CGK DPS MNL DEL BOM BLR MLE CMB KTM SYD MEL AKL JNB CPT NBO ADD ZNZ TAS ALA NQZ SVO DME LED'.split(' '), MAJOR_AP = new Map(MAJOR_LIST.map((c, i) => [c, i]));
+const POP_AL = { TR: ['TK', 'PC', 'VF', 'XQ', 'XC'], GB: ['BA', 'U2', 'FR', 'LS', 'VS'], DE: ['LH', 'EW', 'DE', 'FR', 'TK'], US: ['AA', 'DL', 'UA', 'WN', 'B6'], FR: ['AF', 'U2', 'TO', 'FR'], NL: ['KL', 'HV', 'U2'], IT: ['AZ', 'FR', 'U2', 'W6'], ES: ['IB', 'VY', 'UX', 'FR'], AE: ['EK', 'EY', 'FZ', 'G9'], AZ: ['J2', 'TK'], _: ['EK', 'QR', 'TK', 'LH', 'BA', 'AF'] };
+const nrm = x => String(x || '').replace(/İ/g, 'i').replace(/I/g, 'ı').toLowerCase().replace(/ı/g, 'i').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+let AP_IDX = null, AL_IDX = null;
+const CITY_TR = (() => { const r = {}; try { for (const [k, v] of Object.entries(CITY_EN)) r[v] = k; } catch (e) {} return r; })();
+function apIndex() {
+  if (AP_IDX || !TRAVEL) return AP_IDX;
+  AP_IDX = Object.entries(TRAVEL.ap).map(([c, v]) => ({ c, city: nrm(v[0]), alt: nrm((typeof CITY_EN !== 'undefined' && CITY_EN[v[0]]) || CITY_TR[v[0]] || ''), name: nrm(v[1]), cc: v[2], rk: MAJOR_AP.has(c) ? MAJOR_AP.get(c) : 900 }));
+  return AP_IDX;
+}
+function apSearch(q, n = 6) {
+  const idx = apIndex(), t = nrm(q); if (!idx || !t) return [];
+  const up = q.trim().toUpperCase(), out = [];
+  for (const a of idx) {
+    let sc = null;
+    if (a.c === up) sc = 0;
+    else if (a.city.startsWith(t) || (a.alt && a.alt.startsWith(t))) sc = 1;
+    else if ((' ' + a.name).includes(' ' + t)) sc = 2;
+    else if (t.length >= 3 && (a.city.includes(t) || a.name.includes(t) || (a.alt && a.alt.includes(t)))) sc = 3;
+    if (sc == null) continue;
+    out.push({ a, sc: sc * 1000 + a.rk });
+  }
+  out.sort((x, y) => x.sc - y.sc || (x.a.city < y.a.city ? -1 : 1));
+  return out.slice(0, n).map(({ a }) => ({ v: a.c, code: a.c, t: TRAVEL.ap[a.c][0] + ' – ' + TRAVEL.ap[a.c][1], s: `${flagOf(a.cc) || ''} ${countryName(a.cc) || a.cc}`.trim() }));
+}
+function alSearch(q, n = 6) {
+  if (!TRAVEL) return [];
+  if (!AL_IDX) AL_IDX = Object.entries(TRAVEL.al).map(([c, v]) => ({ c, n: nrm(v) }));
+  const t = nrm(q), up = q.trim().toUpperCase();
+  if (!t) return (POP_AL[HOME_CC] || POP_AL._).filter(c => TRAVEL.al[c]).map(c => ({ v: TRAVEL.al[c], code: c, t: TRAVEL.al[c], s: TX('Sık kullanılan') }));
+  const out = [];
+  for (const a of AL_IDX) {
+    let sc = null;
+    if (a.c === up) sc = 0; else if (a.n.startsWith(t)) sc = 1; else if ((' ' + a.n).includes(' ' + t)) sc = 2; else if (t.length >= 3 && a.n.includes(t)) sc = 3;
+    if (sc == null) continue;
+    const pop = Object.values(POP_AL).some(l => l.includes(a.c));
+    out.push({ a, sc: sc * 10 - (pop ? 5 : 0) });
+  }
+  out.sort((x, y) => x.sc - y.sc || x.a.n.length - y.a.n.length);
+  return out.slice(0, n).map(({ a }) => ({ v: TRAVEL.al[a.c], code: a.c, t: TRAVEL.al[a.c], s: TL`Uçuş no: ${a.c}…` }));
+}
+/* öneri listesi: alanın satırının hemen altında akışta açılır */
+function acBind(inp, search, pick, opt = {}) {
+  if (!inp) return;
+  const host = inp.closest('.row2') || inp.closest('.fld');
+  let box = null, items = [];
+  const close = () => { if (box) { box.remove(); box = null; } };
+  const show = () => {
+    items = search(inp.value);
+    if (!items.length || (opt.hideExact && items.length === 1 && items[0].code === inp.value.trim().toUpperCase() && opt.hideExact(inp.value))) { close(); return; }
+    if (!box) { box = document.createElement('div'); box.className = 'acd'; host.after(box); }
+    box.innerHTML = items.map((it, i) => `<button type="button" class="acr" data-i="${i}"><span class="acc">${esc(it.code)}</span><span class="act"><b>${esc(it.t)}</b><small>${esc(it.s || '')}</small></span></button>`).join('');
+    $$('.acr', box).forEach(b => {
+      b.addEventListener('pointerdown', e => e.preventDefault());
+      b.onclick = () => { const it = items[+b.dataset.i]; close(); pick(it); };
+    });
+  };
+  inp.addEventListener('input', show);
+  inp.addEventListener('focus', () => { if (opt.onEmpty || inp.value) show(); });
+  inp.addEventListener('blur', () => setTimeout(() => { if (opt.onBlur && box && document.activeElement !== inp) opt.onBlur(items); close(); }, 180));
+  inp._acClose = close;
+}
 /* ---------- düzenleme formu: konum kartı ---------- */
 function locView(d) {
   const c = hasC(d), src = d.geoLabel || '';
@@ -4312,11 +4446,11 @@ function renderEdit(app, anim) {
   let typeFields = '';
   if (d.type === 'ucak') {
     typeFields = TL`
-      <div class="row2"><div class="fld"><label for="f-from">Kalkış</label><input class="inp code${A_('from')}" id="f-from" data-k="from" maxlength="3" placeholder="örn. IST" value="${esc(d.from)}" autocapitalize="characters"><div class="sub" id="h-from">${esc(apHint(d.from))}</div></div>
+      <div class="row2"><div class="fld"><label for="f-from">Kalkış</label><input class="inp code${A_('from')}" id="f-from" data-k="from" maxlength="40" autocomplete="off" placeholder="örn. IST" value="${esc(d.from)}" autocapitalize="characters"><div class="sub" id="h-from">${esc(apHint(d.from))}</div></div>
         <div class="swap"><button class="icon-btn" id="swap" aria-label="Kalkış ve varışı değiştir">${I('arrows-exchange')}</button></div>
-        <div class="fld"><label for="f-to">Varış</label><input class="inp code${A_('to')}" id="f-to" data-k="to" maxlength="3" placeholder="örn. FCO" value="${esc(d.to)}" autocapitalize="characters"><div class="sub" id="h-to">${esc(apHint(d.to))}</div></div></div>
-      <div class="row2"><div class="fld" style="flex:1.4"><label for="f-airlineName">Havayolu</label><input class="inp${A_('airline')}" id="f-airlineName" data-k="airlineName" list="als" placeholder="örn. Pegasus" value="${esc(d.airlineName || alName(d.airline))}">
-          <datalist id="als">${['TK', 'PC', 'VF', 'XQ', 'XC', 'LH', 'FR', 'W6', 'U2', 'KL', 'AF', 'BA', 'AZ', 'EK', 'QR', 'LX', 'OS', 'A3'].map(c => `<option value="${esc(alName(c))}">`).join('')}</datalist></div>
+        <div class="fld"><label for="f-to">Varış</label><input class="inp code${A_('to')}" id="f-to" data-k="to" maxlength="40" autocomplete="off" placeholder="örn. FCO" value="${esc(d.to)}" autocapitalize="characters"><div class="sub" id="h-to">${esc(apHint(d.to))}</div></div></div>
+      <div class="row2"><div class="fld" style="flex:1.4"><label for="f-airlineName">Havayolu</label><input class="inp${A_('airline')}" id="f-airlineName" data-k="airlineName" autocomplete="off" placeholder="örn. Pegasus" value="${esc(d.airlineName || alName(d.airline))}">
+          </div>
         ${inp('flightNo', TX('Uçuş no'), 'flightNo', TX('maxlength="8" placeholder="örn. TK1861" autocapitalize="characters"'))}</div>
       <div class="row2">${inp('date', TX('Tarih'), 'date', '', 'date')}${inp('time', TX('Kalkış saati'), 'time', '', 'time')}</div>
       <div class="row2">${inp('seat', TX('Koltuk'), 'seat', TX('maxlength="5" placeholder="örn. 12A"'))}${inp('gate', TX('Kapı'), 'gate', TX('maxlength="6" placeholder="örn. B12"'))}${inp('ref', 'PNR', 'ref', 'maxlength="12" autocapitalize="characters"')}</div>
@@ -4345,7 +4479,7 @@ function renderEdit(app, anim) {
     <div class="form">
       ${d.fromShare ? TL`<div class="autonote">${I('map-pin')} Google Haritalar'dan eklendi. Türünü seç; istersen tarih ve saat ekle (tarihsiz yerler seyahatin "Gezilecekler" listesinde durur).</div>` : autoCount ? TL`<div class="autonote">${I('sparkles')} Biletten ${autoCount} bilgi okundu ve dolduruldu. İşaretli alanları kontrol et.</div>` : ''}
       <div class="fld"><label>Tür</label><div class="types">${TYPES.map(t => `<button class="chip ${d.type === t.k ? 'on' : ''}" data-t="${t.k}">${I(t.ic)} ${t.n}</button>`).join('')}</div></div>
-      ${inp('title', d.type === 'konaklama' ? TX('Otel / konaklama adı') : isPlace(d.type) ? TX('Yerin adı') : TX('Başlık'), 'title', `maxlength="80" placeholder="${d.type === 'ucak' ? TX('Boş bırakırsan rota yazılır') : d.type === 'yemek' ? TX('Örn. Sahil restoranı') : d.type === 'gezi' ? TX('Örn. Eski şehir turu') : TX('Örn. Louvre Müzesi')}"`)}
+      ${inp('title', d.type === 'konaklama' ? TX('Otel / konaklama adı') : isPlace(d.type) ? TX('Yerin adı') : TX('Başlık'), 'title', `maxlength="80" placeholder="${d.type === 'ucak' ? TX('Boş bırakırsan rota yazılır') : d.type === 'yemek' ? TX('Örn. Sahil restoranı') : d.type === 'gezi' ? TX('Örn. Tarihi merkez yürüyüşü') : TX('Örn. Louvre Müzesi')}"`)}
       ${typeFields}
       <div class="row2"><div class="fld" style="flex:1.6"><label for="f-priceAmt">Fiyat (isteğe bağlı)</label><input class="inp" id="f-priceAmt" data-k="priceAmt" inputmode="decimal" placeholder="Masraflara eklenir" value="${esc(d.priceAmt)}" autocomplete="off"></div>
         <div class="fld"><label for="f-priceCur">Para</label><input class="inp code" id="f-priceCur" data-k="priceCur" list="curl" maxlength="3" autocapitalize="characters" placeholder="${baseCur()}" value="${esc(d.priceCur)}"><datalist id="curl">${CURS.map(c => `<option value="${c}">`).join('')}</datalist></div></div>
@@ -4364,15 +4498,27 @@ function renderEdit(app, anim) {
     if (d.from) d.from = d.from.toUpperCase(); if (d.to) d.to = d.to.toUpperCase();
     if (d.flightNo) d.flightNo = d.flightNo.toUpperCase().replace(/\s+/g, '');
     if (d.type === 'ucak') {
-      const code = alFind(d.airlineName) || (d.flightNo && TRAVEL && TRAVEL.al[d.flightNo.slice(0, 2)] ? d.flightNo.slice(0, 2) : '');
+      const code = (d.airline && alName(d.airline) === d.airlineName ? d.airline : '') || alFind(d.airlineName) || (d.flightNo && TRAVEL && TRAVEL.al[d.flightNo.slice(0, 2)] ? d.flightNo.slice(0, 2) : '');
       d.airline = code || ''; if (code && !d.airlineName) d.airlineName = alName(code);
     }
   };
   $$('[data-k]', app).forEach(el => el.addEventListener('input', () => {
     el.classList.remove('auto');
-    if (el.id === 'f-from' || el.id === 'f-to') { el.value = el.value.toUpperCase(); $('#h-' + el.id.slice(2)).textContent = el.value.length === 3 ? apHint(el.value) : ''; }
+    if (el.id === 'f-from' || el.id === 'f-to') { const v = el.value.trim(); $('#h-' + el.id.slice(2)).textContent = v.length === 3 && TRAVEL && TRAVEL.ap[v.toUpperCase()] ? apHint(v.toUpperCase()) : ''; }
     if (el.id === 'f-date' || el.id === 'f-endDate') { const n = nightsBetween($('#f-date').value, $('#f-endDate')?.value); const nn = $('#nights'); if (nn) nn.textContent = n > 0 ? TL`${n} gece` : ''; if ($('#f-endDate')) $('#f-endDate').min = $('#f-date').value; }
   }));
+  /* 5.24: havalimanı ve havayolu önerileri */
+  for (const k of ['from', 'to']) {
+    const inp = $('#f-' + k); if (!inp) continue;
+    const set = it => { inp.value = it.code; inp.classList.remove('auto'); inp.dispatchEvent(new Event('input')); const h = $('#h-' + k); if (h) h.textContent = apHint(it.code); };
+    acBind(inp, q => q.trim().length >= 2 ? apSearch(q) : [], set, {
+      hideExact: v => TRAVEL && TRAVEL.ap[v.trim().toUpperCase()],
+      onBlur: items => { const v = inp.value.trim(); if (v && !(v.length === 3 && TRAVEL && TRAVEL.ap[v.toUpperCase()]) && items[0]) set(items[0]); else if (v.length === 3) inp.value = v.toUpperCase(); }
+    });
+    inp.addEventListener('blur', () => { const v = inp.value.trim(); if (v.length === 3 && /^[a-z]{3}$/i.test(v)) inp.value = v.toUpperCase(); });
+  }
+  const alIn = $('#f-airlineName');
+  if (alIn) acBind(alIn, q => alSearch(q), it => { alIn.value = it.v; d.airlineName = it.v; d.airline = it.code; alIn.classList.remove('auto'); }, { onEmpty: true });
   bindLocCard(app, d, sync);
   const tb = $('#tripBtn'); if (tb) tb.onclick = async () => {
     sync();
@@ -5612,7 +5758,7 @@ window.onBack = function () {
   if (S.view === 'multi') { cancelMulti(); return; }
   if ($('.sheet')) { $('.sheet').closest('.ov').click(); return; }
   if (S.view === 'home' && S.sel) { S.sel = null; render(); return; }
-  if (S.view === 'view' || S.view === 'settings' || S.view === 'stats' || S.view === 'pack' || S.view === 'cinfo' || S.view === 'exp' || S.view === 'shop') { go('home', 'back'); return; }
+  if (S.view === 'view' || S.view === 'settings' || S.view === 'stats' || S.view === 'pack' || S.view === 'cinfo' || S.view === 'phr' || S.view === 'exp' || S.view === 'shop') { go('home', 'back'); return; }
   if (S.view === 'trip') { S.retTrip = null; go('home', 'back'); return; }
   if (S.view === 'world') { if (S.wDrawer) { S.wDrawer = false; const d = $('#wdr'); if (d) d.classList.remove('open'); return; } go(S.worldRet && S.worldRet !== 'world' ? S.worldRet : 'home', 'back'); return; }
   if (S.view === 'docs') { if (S.docPid) { S.docPid = null; render(); } else go('home', 'back'); return; }
