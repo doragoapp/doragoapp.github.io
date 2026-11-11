@@ -36,6 +36,8 @@ input,select,textarea{font:inherit;color:inherit}
 @keyframes ghostFwd{to{opacity:0;transform:scale(1.04)}}
 @keyframes ghostBack{to{opacity:0;transform:translateY(22px) scale(.97)}}
 @keyframes sheetIn{0%{transform:translateY(100%)}70%{transform:translateY(-6px)}100%{transform:translateY(0)}}
+@keyframes flashIn{0%,100%{box-shadow:0 0 0 0 transparent}25%,60%{box-shadow:0 0 0 3px var(--acc)}}
+.card.flash,.hero.flash{animation:flashIn 1.2s ease}
 @keyframes okPop{0%{transform:scale(1)}40%{transform:scale(1.08)}100%{transform:scale(1)}}
 @keyframes tickIn{from{transform:scale(0) rotate(-30deg);opacity:0}70%{transform:scale(1.25)}to{transform:scale(1);opacity:1}}
 @keyframes inFade{from{opacity:0;transform:translateY(8px)}}
@@ -229,7 +231,9 @@ button.item:active:not(:disabled){transform:none;background:var(--soft)}
 .route{font-size:18px;font-weight:800;letter-spacing:.5px;display:inline-flex;align-items:center;gap:8px}
 .route .arr{font-size:13px;color:var(--acc);display:inline-block;transform:translateY(-1px)}
 .card.ty-ucak .thumb{position:relative}
-.inp.auto{background:var(--soft2);border-color:var(--edge)}
+.inp.auto{background:var(--soft2);border-color:var(--acc);box-shadow:inset 0 0 0 .5px var(--acc)}
+.fld:has(.inp.auto,.lcard.auto)>label::after{content:'';display:inline-block;width:13px;height:13px;margin-left:5px;vertical-align:-1px;background:var(--acc);-webkit-mask:var(--spk) center/contain no-repeat;mask:var(--spk) center/contain no-repeat}
+:root{--spk:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 18a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2m0 -12a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2m-7 12a6 6 0 0 1 6 -6a6 6 0 0 1 -6 -6a6 6 0 0 1 -6 6a6 6 0 0 1 6 6'/%3E%3C/svg%3E")}
 .inp.code{text-transform:uppercase;font-weight:700;letter-spacing:1.5px;font-size:18px;text-align:center}
 .inp.code::placeholder{text-transform:none;font-weight:400;letter-spacing:0;font-size:15px}
 .sub{font-size:12px;color:var(--muted);margin:5px 2px 0;min-height:15px;line-height:1.35}
@@ -352,7 +356,7 @@ input,textarea,select,[contenteditable],.diagpre{-webkit-user-select:text;user-s
 .hint-card button{padding:8px 12px;border-radius:10px;background:#FDE68A;color:#713F12;font-weight:700;font-size:13px}
 /* ---------- 2.1: sade konum kartı ---------- */
 .lcard{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px}
-.lcard.auto{background:var(--soft2);border-color:var(--edge)}
+.lcard.auto{background:var(--soft2);border-color:var(--acc)}
 .lrow{display:flex;align-items:center;gap:12px}
 .lpin{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:21px;flex:none}
 .lpin.ok{background:#DCFCE7}.lpin.ap{background:#FFF7ED}.lpin.no{background:var(--soft)}

@@ -1,7 +1,7 @@
 'use strict';
 /* DoraGo — çevrimdışı bilet cüzdanı */
 
-const APP_VER = '5.23.1';
+const APP_VER = '5.23.2';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -538,8 +538,26 @@ function go(view, anim) {
   else if (view === 'home' && S.retTrip && ['view', 'pack', 'cinfo', 'edit', 'exp', 'shop'].includes(S.view)) view = 'trip';
   if (view !== 'pack') S.packRet = false;
   S.anim = anim || (view === 'view' ? 'up' : (order[view] ?? 0) >= (order[S.view] ?? 0) ? 'fwd' : 'back');
+  /* 5.23.2: liste/seyahat sayfasından derine inerken kaydırma yerini sakla, geri dönünce aynı yere (açılan bileti ortala) */
+  const fromK = scrollKey(S.view), toK = scrollKey(view), mem = S.scrollMem || (S.scrollMem = {});
+  if (fromK && (order[view] ?? 0) > (order[S.view] ?? 0)) mem[fromK] = window.scrollY;
+  const restore = toK && (order[view] ?? 0) < (order[S.view] ?? 0) && toK in mem;
+  if (toK && !restore) delete mem[toK];
   ghostOut(S.anim);
-  S.view = view; render(); window.scrollTo(0, 0);
+  S.view = view; render();
+  if (restore) restoreScroll(toK); else window.scrollTo(0, 0);
+}
+function scrollKey(v) { return v === 'home' ? 'h:' + S.tab : v === 'trip' ? 't:' + S.tripName : null; }
+function restoreScroll(k) {
+  const y = S.scrollMem[k]; delete S.scrollMem[k];
+  const tid = S.lastTid; S.lastTid = null;
+  const esc_ = window.CSS && CSS.escape ? CSS.escape(tid || '') : String(tid || '').replace(/"/g, '\\"');
+  const card = tid && ($(`#app .card[data-id="${esc_}"]`) || $(`#app [data-id="${esc_}"]`));
+  const r = card && card.getBoundingClientRect();
+  if (r && r.height > 0) {
+    window.scrollTo(0, Math.max(0, window.scrollY + r.top + r.height / 2 - innerHeight / 2));
+    card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash'); setTimeout(() => card.classList.remove('flash'), 1300);
+  } else window.scrollTo(0, y || 0);
 }
 /* geçişte eski ekranın kopyası hafifçe büyüyüp solar (C) */
 function ghostOut(anim) {
@@ -1082,7 +1100,7 @@ function expDialog(name, it) {
       <div class="exam"><input class="inp" id="xAmt" inputmode="decimal" placeholder="0" value="${esc(st.amt)}" autocomplete="off"><select class="inp" id="xCur">${[...new Set([st.cur, b, ...(S.expCur ? [S.expCur.cur] : []), ...CURS])].map(c => `<option ${c === st.cur ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
       ${st.cur !== b ? `<div class="exrate">1 ${st.cur} = <input class="inp" id="xRate" inputmode="decimal" value="${esc(fmtR(rate))}" placeholder="kur"> ${b} <span id="xConv"></span></div>` : ''}
       ${isT ? '' : `<div class="fchips excats">${EXP_CATS.map(c => `<button class="chip ${st.cat === c.k ? 'on' : ''}" data-xc="${c.k}" style="--kc:${c.c}">${I(c.ic)} ${c.n}</button>`).join('')}</div>`}
-      ${isT ? TL`<p class="snote" style="margin:4px 2px 10px">${esc(it.note)} · bilet fiyatı</p>` : TL`<div class="row2"><div class="fld" style="flex:1.4"><label for="xNote">Not</label><input class="inp" id="xNote" maxlength="60" placeholder="Örn. Dishoom" value="${esc(st.note)}"></div><div class="fld"><label for="xDate">Tarih</label><input class="inp" type="date" id="xDate" value="${esc(st.date)}"></div></div>`}
+      ${isT ? TL`<p class="snote" style="margin:4px 2px 10px">${esc(it.note)} · bilet fiyatı</p>` : TL`<div class="row2"><div class="fld" style="flex:1.4"><label for="xNote">Not</label><input class="inp" id="xNote" maxlength="60" placeholder="Örn. Sahil restoranı" value="${esc(st.note)}"></div><div class="fld"><label for="xDate">Tarih</label><input class="inp" type="date" id="xDate" value="${esc(st.date)}"></div></div>`}
       ${people.length > 1 ? TL`<div class="fsec"><small>Ödeyen</small><div class="fchips">${people.map(p => `<button class="chip ${st.payer === p ? 'on' : ''}" data-xp="${esc(p)}">${esc(p)}</button>`).join('')}</div></div>
         <div class="fsec"><small>Kimler arasında bölünsün</small><div class="fchips">${people.map(p => `<button class="chip ${st.split.includes(p) ? 'on' : ''}" data-xs="${esc(p)}">${st.split.includes(p) ? I('check') + ' ' : ''}${esc(p)}</button>`).join('')}</div></div>` : ''}
       <p class="tde" id="xErr"></p>
@@ -1133,9 +1151,9 @@ function quickPlace(name) {
   const keep = () => { st.title = $('#qpN', ov).value; st.notes = $('#qpO', ov).value; };
   const draw = () => {
     ov.innerHTML = TL`<div class="dlg sheet qpdlg"><h3>Gezilecek yer</h3>
-      <div class="fld"><label for="qpN">Yer</label><input class="inp" id="qpN" maxlength="80" value="${esc(st.title)}" placeholder="Örn. Bread Ahead · Borough Market"></div>
+      <div class="fld"><label for="qpN">Yer</label><input class="inp" id="qpN" maxlength="80" value="${esc(st.title)}" placeholder="Örn. Pazar yerindeki fırın"></div>
       <div class="fchips">${['yemek', 'gezi'].map(k => `<button class="chip ${st.type === k ? 'on' : ''}" data-qt="${k}">${I(typeOf(k).ic)} ${esc(typeOf(k).n)}</button>`).join('')}</div>
-      <div class="fld"><label for="qpO">Not <small>ne yenecek, kim önerdi…</small></label><input class="inp" id="qpO" maxlength="120" value="${esc(st.notes)}" placeholder="Örn. Creme brulee donut · Ceribom önerisi"></div>
+      <div class="fld"><label for="qpO">Not <small>ne yenecek, kim önerdi…</small></label><input class="inp" id="qpO" maxlength="120" value="${esc(st.notes)}" placeholder="Örn. Tatlısı meşhur · arkadaş önerisi"></div>
       <p class="snote">Tarihsiz kaydedilir, planın altında "Gezilecekler" bölümünde durur. Konumu ve tarihi sonra bileti düzenleyerek ekleyebilirsin.</p>
       <p class="tde" id="qpErr"></p>
       <div class="row2"><button class="btn" data-qa="cancel">Vazgeç</button><button class="btn pri" data-qa="ok">Kaydet</button></div></div>`;
@@ -1213,7 +1231,7 @@ function renderShop(app, anim) {
   app.innerHTML = TL`<div class="page shop${animCls(anim)}">
     <div class="bar"><button class="icon-btn" id="back" aria-label="Geri">←</button><div class="vt"><b>${esc(name)} · Alınacaklar</b><small>${c[1] ? TL`${c[0]} / ${c[1]} alındı` : TX('Liste boş')}</small></div></div>
     <div class="sbody">
-      <div class="shadd"><input class="inp" id="shIn" placeholder="Örn. Earl Grey çay" autocomplete="off" maxlength="80"><button class="icon-btn" id="shPh" aria-label="Fotoğrafla ekle">${I('camera-plus')}</button><button class="btn pri" id="shAdd" aria-label="Ekle">${I('plus')}</button></div>
+      <div class="shadd"><input class="inp" id="shIn" placeholder="Örn. Buzdolabı magneti" autocomplete="off" maxlength="80"><button class="icon-btn" id="shPh" aria-label="Fotoğrafla ekle">${I('camera-plus')}</button><button class="btn pri" id="shAdd" aria-label="Ekle">${I('plus')}</button></div>
       ${items.length ? TL`<div class="seg shby"><button class="${by === 'store' ? 'on' : ''}" data-sby="store">${I('building-store')} Mağazaya göre</button><button class="${by === 'who' ? 'on' : ''}" data-sby="who">${I('user')} Kişiye göre</button></div>
         ${gs.map(g => `<div class="shgr">${head(g)}${g.its.map(row).join('')}</div>`).join('')}`
       : TL`<div class="shempty">${I('shopping-cart')}<p><b>Alınacakları buraya yaz</b><br>Hediyeler, denenecek yiyecekler, yapılacaklar… Mağaza ve kişi isteğe bağlı. Fotoğrafı WhatsApp'tan <b>Paylaş → DoraGo</b> ile de ekleyebilirsin.</p></div>`}
@@ -1247,11 +1265,11 @@ function shopDialog(name, it, pre = {}) {
   const keep = () => { for (const [k, id] of [['name', 'sN'], ['who', 'sW'], ['store', 'sS'], ['note', 'sO'], ['price', 'sP']]) { const e = $('#' + id, ov); if (e) st[k] = e.value; } const q = $('#sQ', ov); if (q) st.qty = Math.max(1, Math.min(99, parseInt(q.value, 10) || 1)); const cu = $('#sC', ov); if (cu) st.cur = cu.value; };
   const draw = () => {
     ov.innerHTML = TL`<div class="dlg sheet shdlg"><h3>${it ? TX('Ürünü düzenle') : TX('Alınacak ekle')}</h3>
-      <div class="row2"><div class="fld" style="flex:3"><label for="sN">Ne</label><input class="inp" id="sN" maxlength="80" value="${esc(st.name)}" placeholder="Örn. Shortbread fingers"></div><div class="fld" style="flex:1"><label for="sQ">Adet</label><input class="inp" id="sQ" type="number" min="1" max="99" inputmode="numeric" value="${st.qty}"></div></div>
+      <div class="row2"><div class="fld" style="flex:3"><label for="sN">Ne</label><input class="inp" id="sN" maxlength="80" value="${esc(st.name)}" placeholder="Örn. Yerel çikolata"></div><div class="fld" style="flex:1"><label for="sQ">Adet</label><input class="inp" id="sQ" type="number" min="1" max="99" inputmode="numeric" value="${st.qty}"></div></div>
       <div class="shphx">${st.ph ? `<span class="shth big" data-sa="view" style="background-image:url('${PHB.get(st.ph) ? blobURL('ph:' + st.ph, PHB.get(st.ph)) : ''}')"></span><button class="btn" data-sa="phdel">${I('x')} ${TX('Fotoğrafı kaldır')}</button>` : `<button class="btn" data-sa="ph">${I('camera-plus')} ${TX('Fotoğraf ekle')}</button>`}</div>
-      <div class="fld"><label for="sW">Kim için <small>isteğe bağlı</small></label><input class="inp" id="sW" maxlength="30" value="${esc(st.who)}" placeholder="Örn. Begüm"></div>
+      <div class="fld"><label for="sW">Kim için <small>isteğe bağlı</small></label><input class="inp" id="sW" maxlength="30" value="${esc(st.who)}" placeholder="Örn. Annem"></div>
       ${whoList.length ? `<div class="fchips">${whoList.map(w => `<button class="chip ${st.who === w ? 'on' : ''}" data-sw="${esc(w)}">${esc(w)}</button>`).join('')}</div>` : ''}
-      <div class="fld"><label for="sS">Mağaza <small>isteğe bağlı · çok yerde varsa sadece adı yeter</small></label><input class="inp" id="sS" maxlength="40" value="${esc(st.store)}" placeholder="Örn. M&amp;S"></div>
+      <div class="fld"><label for="sS">Mağaza <small>isteğe bağlı · çok yerde varsa sadece adı yeter</small></label><input class="inp" id="sS" maxlength="40" value="${esc(st.store)}" placeholder="Örn. Zara"></div>
       ${storeList.length ? `<div class="fchips">${storeList.map(w => `<button class="chip ${st.store === w ? 'on' : ''}" data-ss="${esc(w)}">${esc(w)}</button>`).join('')}</div>` : ''}
       <div class="shloc">${st.sloc ? `<span class="tap" data-sa="lshow">${I('map-pin')} ${esc(st.sloc.label || TX('Konum kayıtlı'))}${shopDist(name, st.sloc) ? ' · ' + esc(shopDist(name, st.sloc)) : ''}</span><button class="btn" data-sa="locdel">${I('x')}</button>` : `<button class="btn" data-sa="lpick">${I('map-pin')} ${TX('Haritada şube seç')}</button><button class="btn" data-sa="loc" title="${TX('Bağlantı yapıştır')}">${I('link')}</button>`}</div>
       <div class="fld"><label for="sO">Not</label><input class="inp" id="sO" maxlength="80" value="${esc(st.note)}" placeholder="Örn. otelin yanındaki şube"></div>
@@ -1869,7 +1887,7 @@ function visaDialog(v, preset = {}) {
       <div class="fsec"><small>Tür</small>${chips('kind', VKIND)}</div>
       <div class="fsec"><small>Giriş</small>${chips('entry', { single: TX('Tek'), multi: TX('Çok') })}</div>
       <div class="fsec"><small>Durum</small>${chips('status', VSTAT)}</div>
-      ${st.status === 'appt' ? TL`<div class="row2"><div class="fld"><label for="vAppt">Randevu</label><input class="inp" type="datetime-local" id="vAppt" value="${esc(st.appt)}"></div><div class="fld"><label for="vPlace">Yer</label><input class="inp" id="vPlace" maxlength="40" placeholder="Örn. VFS İzmir" value="${esc(st.place)}"></div></div>` : ''}
+      ${st.status === 'appt' ? TL`<div class="row2"><div class="fld"><label for="vAppt">Randevu</label><input class="inp" type="datetime-local" id="vAppt" value="${esc(st.appt)}"></div><div class="fld"><label for="vPlace">Yer</label><input class="inp" id="vPlace" maxlength="40" placeholder="Örn. VFS Global" value="${esc(st.place)}"></div></div>` : ''}
       <div class="row2"><div class="fld"><label for="vFrom">Geçerlilik başı</label><input class="inp" type="date" id="vFrom" value="${esc(st.from)}"></div><div class="fld"><label for="vTo">Bitiş</label><input class="inp" type="date" id="vTo" value="${esc(st.to)}"></div></div>
       <div class="fld"><label for="vStay">Kalış hakkı (gün, isteğe bağlı)</label><input class="inp" id="vStay" inputmode="numeric" maxlength="3" value="${esc(st.stay)}"></div>
       ${DOCS.people.length > 1 ? TL`<div class="fsec"><small>Kimin vizesi</small><div class="fchips">${DOCS.people.map(p => `<button class="chip ${st.people[0] === p.id ? 'on' : ''}" data-vp="${esc(p.id)}">${esc(p.name)}</button>`).join('')}</div></div>` : ''}
@@ -2473,7 +2491,9 @@ async function phAutoFetch(t) {
 }
 async function phBlob(t) { if (!t.hph || !t.hph.id) return null; const p = await getOne('pages', t.hph.id); return p && p.blob; }
 async function fillVhero(t) {
-  const el = $('#app .vhero[data-hph]') || $('.vhero[data-hph]:not(.ghost *)'); if (!el) return; const b = await phBlob(t); if (!b || !el.isConnected) return;
+  const el = $('#app .vhero[data-hph]') || $('.vhero[data-hph]:not(.ghost *)'); if (!el) return; const b = await phBlob(t);
+  if (!b) { /* sayfa kayıp (eski yedekten geri yükleme): kaydı temizle → harita + yeniden indirme */ if (t.hph && t.hph.id && !PH_BUSY.has(t.id)) { await phMark(t, t.hph.src === 'own' ? { off: 1 } : null); if (S.view === 'view' && S.cur && S.cur.t && S.cur.t.id === t.id) quietRender(); } return; }
+  if (!el.isConnected) return;
   el.style.backgroundImage = `linear-gradient(180deg,rgba(0,0,0,.42) 0%,rgba(0,0,0,0) 32%,rgba(0,0,0,.1) 50%,rgba(0,0,0,.7) 100%),url('${blobURL('hp:' + t.id + ':' + b.size, b)}')`;
   el.classList.add('hasph');
   const cp = t.hph.cpos; if (cp) { const d = await imgDims(b); if (d) { el._cov = { cp, d }; el.dataset.cdone = '1'; placeCover(el); } }
@@ -2555,7 +2575,30 @@ function bindDays(root) {
   $$('.dstub > .dsh', root).forEach(b => b.onclick = () => {
     const st = b.parentElement, o = !st.classList.contains('open'); st.classList.toggle('open', o);
     (S.dayOpen = S.dayOpen || {})[st.dataset.dk] = o; tick();
+    if (o) revealDay(st);
   });
+}
+/* 5.23.2: açılan günün içeriği ekran dışında kalmasın — gerektiği kadar kaydır, başlık üstten çıkmasın */
+function revealDay(st) {
+  /* sayfa, içerik büyümeden aşağı kayamaz → açılma geçişi bitince (en geç 380 ms) kaydır */
+  const dsc = $('.dsc', st); let done = false;
+  const run = () => { if (done) return; done = true; if (dsc) dsc.removeEventListener('transitionend', run); if (st.isConnected && st.classList.contains('open')) doReveal(st); };
+  if (dsc) dsc.addEventListener('transitionend', run); setTimeout(run, 380);
+}
+function doReveal(st) {
+  {
+    const inner = $('.dsci', st); if (!inner) return;
+    const head = $('.dsh', st), r = st.getBoundingClientRect();
+    const full = head.offsetHeight + inner.scrollHeight + 16;
+    const nav = $('.tabs'), fab = $('.fab');
+    let bottom = innerHeight - 12;
+    if (nav) bottom = Math.min(bottom, nav.getBoundingClientRect().top - 8);
+    if (fab) bottom = Math.min(bottom, fab.getBoundingClientRect().top - 8);
+    const over = r.top + full - bottom; if (over <= 0) return;
+    const bar = $('#app .top') || $('#app .bar'), topPad = (bar ? Math.max(0, bar.getBoundingClientRect().bottom) : 0) + 8;
+    const dy = Math.min(over, r.top - topPad); if (dy <= 0) return;
+    window.scrollBy({ top: dy, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }
 }
 function renderTrip(app, anim) {
   const name = S.tripName, g = allTrips().find(x => x.name === name);
@@ -3141,7 +3184,7 @@ function tripDialog({ title, name = '', a = '', e = '', ok = TX('Oluştur'), kin
   return new Promise(res => {
     const ov = document.createElement('div'); ov.className = 'ov';
     ov.innerHTML = TL`<div class="dlg"><h3>${esc(title)}</h3>
-      <div class="fld"><label for="tdN">Seyahatin adı</label><input class="inp" id="tdN" maxlength="60" value="${esc(name)}" placeholder="Örn. Londra · Kasım 2026"></div>
+      <div class="fld"><label for="tdN">Seyahatin adı</label><input class="inp" id="tdN" maxlength="60" value="${esc(name)}" placeholder="Örn. Roma · Mayıs 2027"></div>
       <div class="row2 tdd"><div class="fld"><label for="tdA">Başlangıç</label><input class="inp" id="tdA" type="date" value="${esc(a)}"></div><div class="fld"><label for="tdE">Bitiş</label><input class="inp" id="tdE" type="date" value="${esc(e)}"></div></div>
       <p class="tdh">Tarihler isteğe bağlı: biletleri ekledikçe kendiliğinden genişler.</p>
       <div class="fld"><label>Seyahat tipi <small>(isteğe bağlı${guess && !kind ? TX(' · kesik çizgili olan önerilen') : ''})</small></label>${kindChips(kind, guess)}</div><p class="tde"></p>
@@ -3497,7 +3540,7 @@ async function openTicket(id) {
   const t = S.tickets.find(x => x.id === id); if (!t) return;
   const pages = [];
   for (const pid of t.pageIds) { const p = await getOne('pages', pid); if (p) pages.push(p); }
-  S.cur = { t, pages, zoom: 1 };
+  S.cur = { t, pages, zoom: 1 }; S.lastTid = id;
   go('view');
 }
 
@@ -4300,9 +4343,9 @@ function renderEdit(app, anim) {
   app.innerHTML = TL`<div class="page${animCls(anim)}">
     <div class="bar"><button class="icon-btn" id="cancel" aria-label="Vazgeç">${I('x')}</button><h2>${isPlace(d.type) ? (isNew ? TX('Yeni yer') : TX('Yeri düzenle')) : isNew ? TX('Yeni bilet') : TX('Bileti düzenle')}</h2></div>
     <div class="form">
-      ${d.fromShare ? TL`<div class="autonote">${I('map-pin')} Google Haritalar'dan eklendi. Türünü seç; istersen tarih ve saat ekle (tarihsiz yerler seyahatin "Gezilecekler" listesinde durur).</div>` : autoCount ? TL`<div class="autonote">${I('sparkles')} Biletten ${autoCount} bilgi okundu ve dolduruldu. Mavi alanları kontrol et.</div>` : ''}
+      ${d.fromShare ? TL`<div class="autonote">${I('map-pin')} Google Haritalar'dan eklendi. Türünü seç; istersen tarih ve saat ekle (tarihsiz yerler seyahatin "Gezilecekler" listesinde durur).</div>` : autoCount ? TL`<div class="autonote">${I('sparkles')} Biletten ${autoCount} bilgi okundu ve dolduruldu. İşaretli alanları kontrol et.</div>` : ''}
       <div class="fld"><label>Tür</label><div class="types">${TYPES.map(t => `<button class="chip ${d.type === t.k ? 'on' : ''}" data-t="${t.k}">${I(t.ic)} ${t.n}</button>`).join('')}</div></div>
-      ${inp('title', d.type === 'konaklama' ? TX('Otel / konaklama adı') : isPlace(d.type) ? TX('Yerin adı') : TX('Başlık'), 'title', `maxlength="80" placeholder="${d.type === 'ucak' ? TX('Boş bırakırsan rota yazılır') : d.type === 'yemek' ? TX('Örn. Bacchanalia') : d.type === 'gezi' ? TX('Örn. Notting Hill') : TX('Örn. Louvre Müzesi')}"`)}
+      ${inp('title', d.type === 'konaklama' ? TX('Otel / konaklama adı') : isPlace(d.type) ? TX('Yerin adı') : TX('Başlık'), 'title', `maxlength="80" placeholder="${d.type === 'ucak' ? TX('Boş bırakırsan rota yazılır') : d.type === 'yemek' ? TX('Örn. Sahil restoranı') : d.type === 'gezi' ? TX('Örn. Eski şehir turu') : TX('Örn. Louvre Müzesi')}"`)}
       ${typeFields}
       <div class="row2"><div class="fld" style="flex:1.6"><label for="f-priceAmt">Fiyat (isteğe bağlı)</label><input class="inp" id="f-priceAmt" data-k="priceAmt" inputmode="decimal" placeholder="Masraflara eklenir" value="${esc(d.priceAmt)}" autocomplete="off"></div>
         <div class="fld"><label for="f-priceCur">Para</label><input class="inp code" id="f-priceCur" data-k="priceCur" list="curl" maxlength="3" autocapitalize="characters" placeholder="${baseCur()}" value="${esc(d.priceCur)}"><datalist id="curl">${CURS.map(c => `<option value="${c}">`).join('')}</datalist></div></div>
@@ -4870,12 +4913,19 @@ async function restore() {
     const have = new Set(S.tickets.map(t => t.id));
     const pageMap = new Map(data.pages.map(p => [p.id, p]));
     let added = 0;
+    const hpFix = [];
     for (const t of data.tickets) {
-      if (have.has(t.id)) continue;
-      const newPages = t.pageIds.map(id => pageMap.get(id)).filter(Boolean).map(p => ({ id: p.id, w: p.w, h: p.h, blob: new Blob([B64.dec(p.data)], { type: p.type }) }));
+      if (have.has(t.id)) {
+        /* var olan bilet: başlık fotoğrafı sayfası eksikse yedekten tamamla (5.23.2) */
+        const cur = S.tickets.find(x => x.id === t.id), hid = cur && cur.hph && cur.hph.id;
+        if (hid && pageMap.has(hid) && !(await getOne('pages', hid))) { const x = pageMap.get(hid); hpFix.push({ id: x.id, w: x.w, h: x.h, blob: new Blob([B64.dec(x.data)], { type: x.type }) }); }
+        continue;
+      }
+      const newPages = [...(t.pageIds || []), ...(t.hph && t.hph.id ? [t.hph.id] : [])].map(id => pageMap.get(id)).filter(Boolean).map(p => ({ id: p.id, w: p.w, h: p.h, blob: new Blob([B64.dec(p.data)], { type: p.type }) }));
       const ticket = { ...t, thumb: t.thumb ? new Blob([B64.dec(t.thumb.data)], { type: t.thumb.type }) : null };
       await saveTicketDB(ticket, newPages, []); S.tickets.push(ticket); added++;
     }
+    if (hpFix.length) await putPages(hpFix);
     let tAdded = 0;
     for (const r of data.trips || []) if (r && r.name && !tripRec(r.name)) { (S.trips = S.trips || []).push(r); tAdded++; }
     if (tAdded) await saveTripRecs();
@@ -4889,7 +4939,7 @@ async function restore() {
     if (data.shop) { await getShop(); const have = new Set(Object.values(SHOP).flatMap(r => r.items.map(i => i.ph)).filter(Boolean)); mergeShop(data.shop); const np = []; for (const r of Object.values(data.shop)) for (const i of r.items || []) { const x = i.ph && !have.has(i.ph) && pageMap.get(i.ph); if (x) np.push({ id: x.id, w: x.w, h: x.h, blob: new Blob([B64.dec(x.data)], { type: x.type }) }); } if (np.length) await putPages(np); await saveShop(); }
     if (data.tripPhotos) { await getTP(); const np = []; for (const [k, r] of Object.entries(data.tripPhotos)) { const cur = TP[k] || (TP[k] = { cover: r.cover, items: [], ...(r.cpos ? { cpos: r.cpos } : {}) }); for (const it of r.items || []) { const pg = pageMap.get(it.id); if (!pg || cur.items.some(x => x.id === it.id) || cur.items.length >= PHOTO_MAX) continue; np.push({ id: pg.id, w: pg.w, h: pg.h, blob: new Blob([B64.dec(pg.data)], { type: pg.type }) }); cur.items.push(it); } if (!cur.cover && cur.items[0]) cur.cover = cur.items[0].id; if (!cur.items.length) delete TP[k]; } if (np.length) await putPages(np); await saveTP(); }
     busy(false);
-    toast(added ? TL`${added} bilet geri yüklendi` : tAdded ? TL`${tAdded} seyahat geri yüklendi` : TX('Yedekteki biletler zaten mevcut'), 3500);
+    toast(added ? TL`${added} bilet geri yüklendi` : tAdded ? TL`${tAdded} seyahat geri yüklendi` : hpFix.length ? TL`${hpFix.length} fotoğraf geri yüklendi` : TX('Yedekteki biletler zaten mevcut'), 3500);
     if (tAdded && !added) render();
     if (added) syncReminders();
   } catch (e) { console.error(e); busy(false); toast(TX('Geri yüklenemedi: ') + (e.message || e)); }
