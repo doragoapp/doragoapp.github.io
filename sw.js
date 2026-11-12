@@ -1,5 +1,5 @@
 /* DoraGo web: çevrimdışı çalışma. Biletler bu dosyada değil, telefonun kendi deposunda (IndexedDB) durur. */
-const VER = 'dorago-web-41';
+const VER = 'dorago-web-42';
 const CORE = ['./', 'index.html', 'i18n.js', 'lang-en.js', 'app.js', 'extract.js', 'icons.js', 'logo.png', 'travel.json', 'pdf.min.mjs', 'pdf.worker.min.mjs', 'zxing.min.js',
   'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 // OCR dosyaları büyük (~10 MB): kurulumdan sonra arka planda indirilir

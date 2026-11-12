@@ -934,7 +934,7 @@ html:has(.ov) body{overflow:hidden}
 .tic .tib svg{width:25px;height:25px}
 .tic small{font-size:12px;font-weight:600;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tbd{position:absolute;top:-5px;right:-7px;min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#DC2626;color:#fff;font:700 11px/16px system-ui,sans-serif;font-style:normal;border:2px solid var(--bg);box-sizing:border-box}
-.tic.ok .tib{background:#E1F5EE;color:#0F6E56}.tic.warn .tib,.tic.info .tib{background:#FEF3C7;color:#B45309}.tic.err .tib{background:#FEE2E2;color:#B91C1C}
+
 /* 5.18 Seyahatler ekranı */
 .tlist{padding-top:4px}
 .tlh{font-size:12px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin:14px 4px 8px}
@@ -982,7 +982,7 @@ html[data-pill] .fab{margin-left:12px}
 .dstub.open .dsc::before{left:-10px}.dstub.open .dsc::after{right:-10px}
 .dsc .card{margin-bottom:10px}
 .dstub.pastd{opacity:.6}.dstub.pastd.open{opacity:1}
-.dstub.und .ddb{background:color-mix(in srgb,var(--muted) 14%,var(--card));color:var(--ink2)}
+.dstub.und .ddb{color:var(--ink2)}
 @media (prefers-reduced-motion:reduce){.dsc,.dch{transition:none}}
 /* 5.20 Biletler: arama içinde filtre, seyahat çipi, yıl başlığı */
 .sbox{position:relative;margin-top:12px}.sbox .search{margin-top:0;padding-right:52px}
@@ -1047,6 +1047,20 @@ html[data-theme=gece] .shwho{background:#3A2C10;color:#F6D58E}
 .shdone{margin:4px 0 8px}.shdone.on{background:var(--acc);color:var(--onacc,#fff);border-color:var(--acc)}
 .tadd2{display:flex;gap:10px}.tadd2 .st-add{flex:1;min-width:0}
 .qpdlg .fchips{display:flex;flex-wrap:wrap;gap:6px;margin:-2px 0 12px}.qpdlg .fld label small{font-weight:400;color:var(--muted);margin-left:4px}.qpdlg .chip svg{width:16px;height:16px;vertical-align:-3px}
+
+/* 5.25 tasarım bütünlüğü: E stili simge kutuları (hafif degrade + parlak üst kenar + yumuşak gölge) */
+:root{--tHi:rgba(255,255,255,.75);--tA:20%;--tB:12%}
+html[data-theme=gece]{--tHi:rgba(255,255,255,.08)}
+html[data-theme=gece] :is(.tic .tib,.vri,.phs,.ddb,.top .icon-btn){--tSh:0 2px 6px rgba(0,0,0,.45),0 1px 2px rgba(0,0,0,.3)}
+.tic .tib,.vri,.phs,.ddb,html[data-big] .top .icon-btn{
+  background:linear-gradient(180deg,color-mix(in srgb,var(--tc,var(--acc)) 7%,var(--card)) 0%,color-mix(in srgb,var(--tc,var(--acc)) 19%,var(--card)) 100%);
+  box-shadow:inset 0 1px 0 var(--tHi),var(--tSh,0 2px 5px color-mix(in srgb,var(--tc,var(--acc)) var(--tA),transparent),0 1px 1.5px color-mix(in srgb,var(--tc,var(--acc)) var(--tB),transparent))}
+html[data-big] .top .icon-btn{--tc:var(--ink2)}
+.tic.ok .tib,.vst .vri.s-done{--tc:#0F6E56;color:#0F6E56}
+.tic.warn .tib,.tic.info .tib{--tc:#D97706;color:#B45309}
+.tic.err .tib{--tc:#DC2626;color:#B91C1C}
+.dstub.und .ddb{--tc:var(--muted)}
+.tic:active .tib,.vri:active,.phs:active,html[data-big] .top .icon-btn:active{box-shadow:inset 0 1px 2px color-mix(in srgb,var(--tc,var(--acc)) 25%,transparent)}
 </style>
 </head>
 <body>
