@@ -253,7 +253,7 @@ button.item:active:not(:disabled){transform:none;background:var(--soft)}
 .phbt{font-size:clamp(30px,9vw,52px);font-weight:800;line-height:1.2;margin:14px 0 10px;word-break:break-word}
 .phbig em{display:block;color:#E9D5BF;font-size:17px;font-style:italic}
 .phbb{display:flex;gap:10px;justify-content:center;margin-top:26px}.phbb .btn{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.25)}
-.acd{background:var(--card);border:1px solid var(--line);border-radius:14px;margin:-6px 0 14px;overflow:hidden;animation:fadeIn .15s}
+.acd{background:var(--card);border:1px solid var(--line);border-radius:14px;margin:-6px 0 14px;overflow:hidden auto;overscroll-behavior:contain;animation:fadeIn .15s}
 .acr{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 12px;border-top:1px solid var(--line);background:none;color:var(--ink)}
 .acr:first-child{border-top:0}
 .acc{font-weight:700;letter-spacing:1px;font-size:12.5px;background:var(--soft);color:var(--acc2);border-radius:7px;padding:3px 6px;min-width:38px;text-align:center;flex:none}
@@ -668,6 +668,8 @@ html[data-theme=defter] .kp-logo{box-shadow:0 6px 18px rgba(59,42,30,.14)}
 .card.cA{position:relative;overflow:hidden}
 .card.stamped>.cdot,.card.stamped>.ci,.card.stamped>.cr{opacity:.62}
 .stamp{position:absolute;right:54px;bottom:8px;transform:rotate(-8deg);font:700 11.5px/1 Georgia,'Noto Serif',serif;letter-spacing:1.6px;padding:6px 9px;border:2.2px solid currentColor;border-radius:7px;pointer-events:none;background:color-mix(in srgb,var(--card) 70%,transparent)}
+.stamp.stampin{animation:stampIn .46s cubic-bezier(.2,.9,.3,1.25) both}
+@keyframes stampIn{0%{opacity:0;transform:scale(1.9) rotate(-22deg)}55%{opacity:1;transform:scale(.94) rotate(-6deg)}100%{opacity:1;transform:scale(1) rotate(-8deg)}}
 .stamp.s-done{color:#0F766E}.stamp.s-missed{color:#B42318}.stamp.s-cancel{color:#7A7870}
 html[data-theme=gece] .stamp.s-done{color:#2DD4BF}html[data-theme=gece] .stamp.s-missed{color:#F87171}html[data-theme=gece] .stamp.s-cancel{color:#94A3B8}
 .cask{display:flex;align-items:center;gap:5px;margin-top:7px;flex-wrap:wrap}.cask>span:first-child{font-size:12px;color:var(--muted);font-weight:600}
@@ -1061,6 +1063,149 @@ html[data-big] .top .icon-btn{--tc:var(--ink2)}
 .tic.err .tib{--tc:#DC2626;color:#B91C1C}
 .dstub.und .ddb{--tc:var(--muted)}
 .tic:active .tib,.vri:active,.phs:active,html[data-big] .top .icon-btn:active{box-shadow:inset 0 1px 2px color-mix(in srgb,var(--tc,var(--acc)) 25%,transparent)}
+
+/* ===== 5.26 tasarım paketi ===== */
+:root{--grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .42 0 0 0 0 .28 0 0 0 0 .16 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");--grainOp:.13;--cardSh:0 6px 16px color-mix(in srgb,var(--ink) 11%,transparent),0 1px 3px color-mix(in srgb,var(--ink) 7%,transparent)}
+html[data-theme=gece]{--grainOp:.06;--cardSh:0 6px 18px rgba(0,0,0,.45),0 1px 3px rgba(0,0,0,.35)}
+/* durum kutuları (C): doygun degrade + rozet + renkli etiket */
+.tic.warn .tib,.tic.info .tib,.tic.err .tib,.tic.ok .tib{background:linear-gradient(180deg,color-mix(in srgb,var(--tc) 20%,var(--card)),color-mix(in srgb,var(--tc) 42%,var(--card)))}
+.tic.warn .tbd,.tic.info .tbd{background:#D97706}
+.tic.warn small,.tic.info small{color:#B45309;font-weight:700}.tic.err small{color:#B91C1C;font-weight:700}.tic.ok small{color:#0F6E56}
+/* seyahat kartları (D): gölge + doku + koçan */
+.tcard{position:relative;border:0;box-shadow:var(--cardSh);overflow:hidden}
+.tcard::after,.dstub::after{content:"";position:absolute;inset:0;border-radius:inherit;background-image:var(--grain);opacity:var(--grainOp);mix-blend-mode:multiply;pointer-events:none;z-index:3}
+html[data-theme=gece] .tcard::after,html[data-theme=gece] .dstub::after{mix-blend-mode:screen}
+.tperf{display:block;position:relative;height:0;border-top:2px dashed color-mix(in srgb,var(--ink) 16%,transparent);margin:0 14px;z-index:2}
+.tperf::before,.tperf::after{content:"";position:absolute;top:-10px;width:18px;height:18px;border-radius:50%;background:var(--bg)}
+.tperf::before{left:-24px}.tperf::after{right:-24px}
+/* sıradaki seyahat kartı: yalnız gölge */
+.hero{box-shadow:0 8px 20px color-mix(in srgb,var(--heroBg) 35%,transparent),0 2px 5px color-mix(in srgb,var(--heroBg) 22%,transparent)}
+/* Biletler (B): gün koçanları + kartlar + arama */
+.dstub{position:relative;border:0;box-shadow:var(--cardSh);overflow:visible}
+.dstub>.dsh,.dstub>.dsc{position:relative;z-index:1}
+.dstub.open .dsc::before,.dstub.open .dsc::after{border:0;top:-10px;width:18px;height:18px}
+.dstub.open .dsc::before{left:-9px}.dstub.open .dsc::after{right:-9px}
+.card{border-color:transparent;box-shadow:0 2px 8px color-mix(in srgb,var(--ink) 9%,transparent)}
+html[data-theme=gece] .card{box-shadow:0 2px 8px rgba(0,0,0,.4)}
+.sbox input,.sbox .inp{box-shadow:0 2px 8px color-mix(in srgb,var(--ink) 7%,transparent)}
+/* bilet kartı simgeleri (A) */
+.dot{background-image:linear-gradient(180deg,rgba(255,255,255,.22),rgba(0,0,0,.08))!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 3px 8px color-mix(in srgb,var(--c) 38%,transparent)}
+.cA.selmode .cdot .dot{background-image:none!important;box-shadow:inset 0 0 0 2.5px var(--c)}
+.cA.selected .cdot .dot{box-shadow:0 3px 8px color-mix(in srgb,var(--acc) 38%,transparent)}
+.cic,.cfs{border:0;--tc:var(--acc);background:linear-gradient(180deg,color-mix(in srgb,var(--tc) 7%,var(--card)),color-mix(in srgb,var(--tc) 19%,var(--card)));box-shadow:inset 0 1px 0 var(--tHi),0 2px 5px color-mix(in srgb,var(--tc) 20%,transparent)}
+.cic:active{box-shadow:inset 0 1px 2px color-mix(in srgb,var(--tc) 25%,transparent)}
+/* sekme çubuğu + FAB */
+.tabs{box-shadow:0 -6px 18px color-mix(in srgb,var(--ink) 9%,transparent)}
+.fab{box-shadow:0 8px 20px color-mix(in srgb,var(--acc) 40%,transparent),0 2px 5px color-mix(in srgb,var(--acc) 30%,transparent)}
+html[data-theme=gece] .tabs{box-shadow:0 -6px 18px rgba(0,0,0,.45)}
+
+/* masraf fişi */
+.rcpt{position:relative;background:color-mix(in srgb,var(--card) 70%,#fff);border-radius:6px 6px 0 0;padding:16px 14px 26px;margin:2px 2px 18px;box-shadow:var(--cardSh);
+ -webkit-mask:radial-gradient(circle 7px at 50% 100%,transparent 97%,#000) 0 0/16px 100% repeat-x;mask:radial-gradient(circle 7px at 50% 100%,transparent 97%,#000) 0 0/16px 100% repeat-x}
+html[data-theme=gece] .rcpt{background:var(--card)}
+.rch{text-align:center;margin-bottom:6px}.rch b{display:block;font-weight:800;letter-spacing:2px;text-transform:uppercase;font-size:14px}.rch small{color:var(--muted);font-size:12px}
+.rcpt .exd{font:700 11.5px var(--font,system-ui);letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin:12px 2px 2px}
+.rcpt .exlist{border:0;background:none;padding:0;box-shadow:none;margin:0}.rcpt .exr{border-bottom:0;padding:7px 2px}.rcpt .exr .dot{width:28px;height:28px;font-size:15px}
+.rcpt .exa,.rct b,.rcl b{font-variant-numeric:tabular-nums}
+.rcd{border-top:1.5px dashed color-mix(in srgb,var(--ink) 22%,transparent);margin:10px 0}
+.rct{display:flex;justify-content:space-between;align-items:baseline;font-weight:800;letter-spacing:1px}.rct b{font-size:22px;letter-spacing:0}
+.rcs{color:var(--muted);font-size:12.5px;margin-top:2px}
+.rcpt .exbar{margin-top:10px}
+.rcl{display:flex;justify-content:space-between;font-size:14px;padding:4px 2px}.rcl span{color:var(--ink2)}
+
+/* Belgelerim: pasaport kapakları + vize damgaları */
+.ppg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:6px}
+.ppc{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;min-height:150px;border-radius:14px 18px 18px 14px;padding:12px 10px;color:#F6E7C8;background:linear-gradient(160deg,color-mix(in srgb,var(--pc) 88%,#fff),var(--pc));box-shadow:inset 6px 0 0 rgba(0,0,0,.18),0 6px 14px rgba(0,0,0,.2)}
+.ppc small{font-size:9.5px;letter-spacing:1.4px;font-weight:700;opacity:.9}
+.ppg-g{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;border:1.5px solid #E6C77A;color:#E6C77A;margin:12px 0 10px;font-style:normal}.ppg-g svg{width:22px;height:22px}
+.ppc b{font-size:15px;color:#fff}.ppc span{font-size:11.5px;opacity:.9;margin-top:2px}.ppc span.wn{color:#FCD34D;opacity:1;font-weight:700}.ppc span.er{color:#FCA5A5;opacity:1;font-weight:700}
+.ppc.add b{color:var(--acc)}.ppc.add{min-height:96px;background:var(--card);color:var(--acc);border:2px dashed var(--line);box-shadow:none;justify-content:center;gap:6px}.ppc.add svg{width:26px;height:26px}
+.vpage{display:flex;flex-wrap:wrap;gap:18px 14px;justify-content:center;align-items:center;padding:22px 12px;border-radius:16px;margin-bottom:8px;box-shadow:var(--cardSh);
+ background:color-mix(in srgb,var(--card) 80%,#F3EAD8);background-image:repeating-linear-gradient(45deg,color-mix(in srgb,#0F766E 4%,transparent) 0 6px,transparent 6px 12px)}
+html[data-theme=gece] .vpage{background:var(--card)}
+.vst{display:flex;flex-direction:column;align-items:center;gap:1px;border:2.5px solid var(--sc);color:var(--sc);border-radius:10px;padding:7px 11px;transform:rotate(var(--r));font-family:ui-monospace,Menlo,monospace;line-height:1.15;opacity:.9;background:transparent;max-width:46%}
+.vst b{font-size:12.5px;font-weight:800;letter-spacing:.5px}.vst em{font-style:normal;font-size:11px;font-weight:800;letter-spacing:1px}.vst small{font-size:10px;font-weight:600}
+.vst.pend{border-style:dashed}.vst.rnd{border-radius:50%;width:104px;height:104px;justify-content:center;padding:6px}
+.vst:active{transform:rotate(var(--r)) scale(.95)}
+
+/* Takvim (B): defter kartı + spiral + washi bant + ay seçici */
+.cal{position:relative;border:0;box-shadow:var(--cardSh);overflow:visible}
+.cal::after{content:"";position:absolute;inset:0;border-radius:inherit;background-image:var(--grain);opacity:var(--grainOp);mix-blend-mode:multiply;pointer-events:none}
+.rings{display:none}
+html[data-theme=defter] .cal{margin-top:16px;padding-top:20px}
+html[data-theme=defter] .rings{display:flex;justify-content:space-around;position:absolute;left:18px;right:18px;top:-9px;pointer-events:none;z-index:2}
+.rings b{width:10px;height:20px;border-radius:6px;background:linear-gradient(180deg,#B9A694,#7E6B5A);box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.wash{position:absolute;left:0;right:0;top:4px;height:30px;background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--wc) 26%,transparent) 0 6px,color-mix(in srgb,var(--wc) 16%,transparent) 6px 12px);text-decoration:none;z-index:0}
+.wash.s{left:6%;clip-path:polygon(5px 0,100% 0,100% 100%,0 100%,7px 55%,2px 30%)}
+.wash.e{right:6%;clip-path:polygon(0 0,100% 0,calc(100% - 6px) 35%,calc(100% - 2px) 70%,calc(100% - 5px) 100%,0 100%)}
+.wash.s.e{clip-path:polygon(5px 0,100% 0,calc(100% - 6px) 40%,calc(100% - 3px) 100%,0 100%,7px 55%)}
+.wash.rs{left:2px;border-radius:3px 0 0 3px}.wash.re{right:2px;border-radius:0 3px 3px 0}
+.wl{position:absolute;left:3px;top:39px;z-index:2;font-style:normal;font-size:9px;font-weight:800;color:color-mix(in srgb,var(--wc,var(--acc)) 80%,var(--ink));white-space:nowrap;pointer-events:none;max-width:300%;overflow:hidden;text-overflow:ellipsis}
+.gr button{overflow:visible;height:52px}
+.gr button.sel{background:linear-gradient(180deg,color-mix(in srgb,var(--acc) 85%,#fff),var(--acc));box-shadow:0 3px 8px color-mix(in srgb,var(--acc) 35%,transparent)}
+.gr .dn,.gr i{position:relative;z-index:1}
+.mh .ar{border:0;border-radius:12px;--tc:var(--acc);color:var(--acc);background:linear-gradient(180deg,color-mix(in srgb,var(--tc) 7%,var(--card)),color-mix(in srgb,var(--tc) 19%,var(--card)));box-shadow:inset 0 1px 0 var(--tHi),0 2px 5px color-mix(in srgb,var(--tc) 20%,transparent)}
+.ar svg{width:20px;height:20px}
+.mpk{display:inline-flex;align-items:center;gap:4px;font:inherit;font-family:var(--fontH,inherit);font-size:19px;color:var(--ink);padding:5px 12px;border-radius:12px;background:var(--card);box-shadow:0 2px 6px color-mix(in srgb,var(--ink) 10%,transparent)}
+.mpk svg{width:16px;height:16px;color:var(--acc)}
+.mpy{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.mpyb{display:inline-flex;align-items:center;gap:4px;font:400 24px var(--fontH,inherit);color:var(--ink)}.mpyb svg{width:16px;height:16px;color:var(--acc)}
+.mpg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:6px}
+.mpm{border-radius:12px;padding:10px 4px 8px;text-align:center;font-size:15px;color:var(--ink);background:var(--card);box-shadow:0 1px 4px color-mix(in srgb,var(--ink) 9%,transparent)}
+.mpm small{display:block;font-size:11px;color:var(--muted);margin-top:2px}.mpm.has small{color:var(--acc);font-weight:700}
+.mpm.cur{box-shadow:inset 0 0 0 2px var(--acc)}
+.mpm.sel{background:linear-gradient(180deg,color-mix(in srgb,var(--acc) 85%,#fff),var(--acc));color:var(--onacc);box-shadow:0 3px 8px color-mix(in srgb,var(--acc) 35%,transparent)}.mpm.sel small{color:var(--onacc);opacity:.85}
+/* 5.26 iskelet yükleme */
+.skel{background:linear-gradient(100deg,color-mix(in srgb,var(--ink) 6%,transparent) 30%,color-mix(in srgb,var(--ink) 12%,transparent) 50%,color-mix(in srgb,var(--ink) 6%,transparent) 70%) 0 0/300% 100%;animation:skel 1.3s linear infinite}
+.tart.skel{position:absolute;inset:0;opacity:.6}
+@keyframes skel{from{background-position:100% 0}to{background-position:0 0}}
+.skc{border-radius:20px;background:var(--card);box-shadow:var(--cardSh);margin:0 0 14px;overflow:hidden;display:flex;flex-direction:column;gap:9px;padding-bottom:16px}
+.skc i{display:block;height:118px}.skc b{display:block;height:14px;width:55%;margin:6px 16px 0;border-radius:7px}.skc s{display:block;height:11px;width:35%;margin:0 16px;border-radius:6px}
+@media (prefers-reduced-motion:reduce){.skel{animation:none}}
+/* 5.26 otopark */
+button.vrow.pkr{width:100%;text-align:left;background:none;border-left:0;border-right:0;border-bottom:0;color:var(--ink);font:inherit}
+.vrows>button.vrow.pkr:first-child{border-top:0}
+.pkr .vri{--tc:#0E7490}.pkr.ok .vri{--tc:#15803D;color:#15803D}
+html[data-theme=gece] .pkr.ok .vri{--tc:#4ADE80;color:#4ADE80}
+.pkr .vrt{flex:1;min-width:0}
+.pkgo{flex:none;font-size:13px;font-weight:700;color:#fff;background:var(--acc);border-radius:999px;padding:7px 13px}
+.pkth{flex:none;width:44px;height:44px;border-radius:10px;background:var(--soft) center/cover;box-shadow:0 2px 6px color-mix(in srgb,var(--ink) 18%,transparent)}
+.pkw{margin:14px 0 4px}
+.pkph{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:4px 0 8px}
+.pkp{position:relative;aspect-ratio:1;border-radius:14px;background:var(--soft) center/cover;border:0}
+.pkp.add{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--acc);border:2px dashed color-mix(in srgb,var(--acc) 45%,transparent);background:color-mix(in srgb,var(--acc) 7%,var(--card));font-size:24px}
+.pkp.add small{font-size:11.5px;font-weight:600}
+.pkx{position:absolute;top:4px;right:4px;width:26px;height:26px;border-radius:50%;border:0;background:rgba(0,0,0,.55);color:#fff;font-size:17px;line-height:1}
+.pkdlg .lnk{background:none;border:0;color:var(--acc);font-weight:600;font-size:14px;padding:4px 0 10px;display:inline-flex;gap:6px;align-items:center}
+.pkgeo{display:flex;align-items:center;gap:8px;width:100%;padding:11px 12px;border-radius:12px;border:1px dashed var(--line);background:var(--soft);color:var(--ink2);font:inherit;font-size:14px;margin:4px 0 6px}
+.pkgeo.ok{border-style:solid;border-color:color-mix(in srgb,#15803D 40%,transparent);color:#15803D;background:color-mix(in srgb,#15803D 8%,var(--card))}
+.pkgeo.no{color:#B45309}
+.pkbig{display:grid;gap:8px;margin:4px 0 10px}.pkbig.n{grid-template-columns:repeat(2,1fr)}
+.pkb{border:0;border-radius:16px;aspect-ratio:4/3;background:var(--soft) center/cover}
+.pkbig:not(.n) .pkb{aspect-ratio:4/3;width:100%}
+.pknote{font:700 22px/1.25 Georgia,'Noto Serif',serif;text-align:center;padding:4px 0 2px}
+.pksh h3{display:flex;align-items:center;gap:8px}
+.pkacts{display:flex;gap:8px;margin:2px 0 10px}.pkacts .btn{flex:1;white-space:nowrap;padding-left:8px;padding-right:8px}
+/* 5.26 özel günler — zaman çizelgesi A */
+.sptl{position:relative;margin:6px 0 14px;padding-left:22px}
+.sptl::before{content:"";position:absolute;left:7px;top:8px;bottom:8px;width:2px;background:var(--line);border-radius:2px}
+.spi{position:relative;--sc:#6B7280;background:var(--card);border-radius:16px;box-shadow:var(--cardSh);padding:11px 13px;margin:0 0 10px}
+.spi.sp-hol{--sc:#DC2626}.spi.sp-ev{--sc:#7C3AED}.spi.sp-obs{--sc:#B45309}.spi.sp-wk{--sc:#6B7280}
+html[data-theme=gece] .spi.sp-hol{--sc:#F87171}html[data-theme=gece] .spi.sp-ev{--sc:#A78BFA}html[data-theme=gece] .spi.sp-obs{--sc:#FBBF24}html[data-theme=gece] .spi.sp-wk{--sc:#9CA3AF}
+.spi.out{opacity:.72}
+.spd{position:absolute;left:-21px;top:15px;width:12px;height:12px;border-radius:50%;background:var(--sc);box-shadow:0 0 0 3px var(--bg)}
+.spi.sp-wk .spd{background:var(--bg);border:2.5px solid var(--sc);box-sizing:border-box}
+.spb small{display:block;font-size:12px;font-weight:700;color:var(--sc);letter-spacing:.2px}
+.spb b{display:block;font-size:15.5px;margin:2px 0 3px;color:var(--ink)}
+.spb p{margin:3px 0 0;font-size:13px;line-height:1.4;color:var(--ink2)}.spb p.spw{font-style:italic;color:var(--muted)}
+.spl{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;border-radius:999px;padding:2px 8px;background:color-mix(in srgb,var(--sc) 12%,var(--card));color:var(--sc)}
+.spl.ok{--sc:#15803D}.spl.ap{--sc:#B45309}.spl svg{width:12px;height:12px}
+.spq{display:inline-flex;align-items:center;gap:5px;margin-top:7px;background:none;border:0;padding:0;color:var(--acc);font:600 13px/1 inherit;font-family:inherit}.spq svg{width:14px;height:14px}
+.dchip.sp-hol{color:#DC2626;background:color-mix(in srgb,#DC2626 11%,var(--card))}
+.dchip.sp-ev{color:#7C3AED;background:color-mix(in srgb,#7C3AED 11%,var(--card))}
+.dchip.sp-obs{color:#B45309;background:color-mix(in srgb,#B45309 11%,var(--card))}
+.dchip.sp-wk{color:var(--muted);background:color-mix(in srgb,var(--ink) 7%,var(--card))}
+.tic.ev .tbd{background:#7C3AED}
 </style>
 </head>
 <body>

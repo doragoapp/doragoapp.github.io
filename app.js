@@ -1,7 +1,7 @@
 'use strict';
 /* DoraGo — çevrimdışı bilet cüzdanı */
 
-const APP_VER = '5.25';
+const APP_VER = '5.26';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -510,7 +510,7 @@ function flightLine(t) {
 }
 
 /* ================= görünümler ================= */
-const TCOL = { ucak: '#0EA5E9', muze: '#A855F7', etkinlik: '#F59E0B', ulasim: '#10B981', konaklama: '#EC4899', diger: '#64748B' };
+const TCOL = { ucak: '#0EA5E9', muze: '#A855F7', etkinlik: '#F59E0B', ulasim: '#10B981', konaklama: '#EC4899', yemek: '#D4537E', gezi: '#0F766E', diger: '#64748B' };
 
 function render() {
   const app = $('#app'), anim = S.anim; S.anim = null;
@@ -913,7 +913,7 @@ async function tripCountry(name) {
   return { ...c, cc: dest.cc, city: dest.city, lat: dest.lat, lon: dest.lon, country: countryName(dest.cc), tzName: tz, diffH, foreign: dest.cc !== HOME_CC };
 }
 const diffTxt = h => { if (h == null) return ''; const hn = homeName(); return h === 0 ? TL`${hn} ile aynı saat` : TL`${hn}${ablSfx(hn)} ${Math.abs(h)} saat ${h > 0 ? TX('ileride') : TX('geride')}`; };
-async function openCInfo(name) { busy(TX('Hazırlanıyor…')); const ci = await tripCountry(name); busy(false); if (!ci) { toast(TX('Bu seyahatin ülkesi bulunamadı')); return; } S.cinfo = { name, ci }; go('cinfo'); }
+async function openCInfo(name) { busy(TX('Hazırlanıyor…')); await loadSpecial(); evRefresh(EVD && EVD.v).then(() => { if (S.view === 'cinfo') quietRender(); }); const ci = await tripCountry(name); busy(false); if (!ci) { toast(TX('Bu seyahatin ülkesi bulunamadı')); return; } S.cinfo = { name, ci }; go('cinfo'); }
 /* ---------- 5.24: konuşma kılavuzu (www/phrases.js, tembel) ---------- */
 const PHR_LANGS = new Set('en tr de fr it es pt nl el ar ru ja zh ko th cs hu pl hr ka'.split(' '));
 const PHR_ALIAS = { sr: 'hr', bs: 'hr', cnr: 'hr' };
@@ -983,6 +983,137 @@ function phrShow(i) {
   dlgClose = close;
   ov.onclick = e => { if (e.target.closest('#phSay')) { phrSpeak(i); return; } close(); };
 }
+/* ================= 5.26: Seyahatteki özel günler (resmi tatil, etkinlik, dikkat edilecek günler) =================
+   holidays.js (window.HOL, date-holidays verisi) + events.json (kurallı etkinlikler; internet varken doragoapp.github.io'dan güncellenir) + WEEK_RULES */
+let SP_P = null, EVD = null;
+const EV_URL = 'https://doragoapp.github.io/events.json';
+function loadSpecial() {
+  if (window.HOL && EVD) return Promise.resolve();
+  if (!SP_P) SP_P = (async () => {
+    await new Promise(res => { if (window.HOL) return res(); const s = document.createElement('script'); s.src = 'holidays.js'; s.onload = res; s.onerror = res; document.head.appendChild(s); });
+    let loc = null; try { loc = await (await fetch('events.json')).json(); } catch (e) {}
+    const rem = await metaGet('evRemote').catch(() => null);
+    EVD = rem && loc && rem.v > loc.v ? rem : loc || rem || { v: 0, ev: [] };
+  })().catch(e => { SP_P = null; console.warn('özel günler', e); });
+  return SP_P;
+}
+/* haftada en çok bir kez uzaktaki events.json'a bak (yalnız dosya indirilir, veri gönderilmez) */
+async function evRefresh(locV) {
+  try {
+    if (location.hostname === 'doragoapp.github.io' || !navigator.onLine) return;
+    const at = (await metaGet('evAt')) || 0; if (Date.now() - at < 7 * 864e5) return;
+    await metaSet('evAt', Date.now() - 6 * 864e5); /* başarısızsa ertesi gün yeniden dene */
+    const r = await fetch(EV_URL, { cache: 'no-cache' }); if (!r.ok && r.status !== 304) return;
+    await metaSet('evAt', Date.now()); if (r.status === 304) return;
+    const j = await r.json(); if (!j || !Array.isArray(j.ev) || !(j.v > Math.max(locV || 0, (EVD && EVD.v) || 0))) return;
+    await metaSet('evRemote', j); EVD = j;
+  } catch (e) {}
+}
+function easterD(y) { const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451), mo = Math.floor((h + l - 7 * m + 114) / 31), da = (h + l - 7 * m + 114) % 31 + 1; return new Date(y, mo - 1, da, 12); }
+function orthEasterD(y) { const a = y % 4, b = y % 7, c = y % 19, d = (19 * c + 15) % 30, e = (2 * a + 4 * b - d + 34) % 7, mo = Math.floor((d + e + 114) / 31), da = (d + e + 114) % 31 + 1; return new Date(y, mo - 1, da + 13, 12); }
+function advent1D(y) { const x = new Date(y, 11, 25, 12), w = x.getDay(); return new Date(y, 11, 25 - (w || 7) - 21, 12); }
+function nthWdD(y, m, wd, n) { if (n > 0) { const f = new Date(y, m - 1, 1, 12); return new Date(y, m - 1, 1 + (wd - f.getDay() + 7) % 7 + (n - 1) * 7, 12); } const l = new Date(y, m, 0, 12); return new Date(y, m - 1, l.getDate() - (l.getDay() - wd + 7) % 7, 12); }
+const addD = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n, 12);
+/* etkinliğin y yılındaki aralığı: { a, b, ver } */
+function evRange(ev, y) {
+  if (ev.y && ev.y[y]) return { a: ev.y[y][0], b: ev.y[y][1], ver: y };
+  const r = ev.r || {}; let s;
+  if (r.f) { const [m, d] = r.f.split('-').map(Number); s = new Date(y, m - 1, d, 12); }
+  else if (r.n) s = nthWdD(y, r.n[0], r.n[1], r.n[2]);
+  else if (r.e != null) s = addD(easterD(y), r.e);
+  else if (r.oe != null) s = addD(orthEasterD(y), r.oe);
+  else if (r.a != null) s = addD(advent1D(y), r.a);
+  else return null;
+  if (r.o) s = addD(s, r.o);
+  let b;
+  if (r.to) { const [m, d] = r.to.split('-').map(Number); b = new Date(y + (m < s.getMonth() + 1 ? 1 : 0), m - 1, d, 12); }
+  else b = addD(s, (r.d || 1) - 1);
+  return { a: ymd(s), b: ymd(b) };
+}
+/* haftalık / dönemsel dikkat kuralları (ülke) */
+const SUN_CLOSED = { DE: 1, AT: 1, CH: 1, NO: 1, PL: 1, HR: 1, SI: 1 };
+const PL_TRADE_SUN = ['2026-01-25', '2026-03-29', '2026-04-26', '2026-06-28', '2026-08-30', '2026-12-06', '2026-12-13', '2026-12-20'];
+const FRI_SAT = { SA: 1, QA: 1, KW: 1, OM: 1, BH: 1, JO: 1, EG: 1, IL: 1, DZ: 1, IQ: 1, LY: 1, SD: 1, YE: 1, IR: 1 };
+const MUSEUM_OFF = { IT: 1, DE: 1, AT: 1, ES: 1, PT: 1, FR: 2 }; /* 1 Pazartesi, 2 Salı (Louvre vb.) */
+const SIESTA = { ES: '14:00–17:00', IT: '13:00–16:00', GR: '14:00–17:30', PT: '13:00–15:00', CY: '13:00–16:00', MT: '12:00–16:00' };
+const RAMADAN_CC = { SA: 1, AE: 1, QA: 1, KW: 1, OM: 1, BH: 1, JO: 1, EG: 1, MA: 1, DZ: 1, TN: 1, IR: 1, BN: 1, MV: 1, PK: 1, MY: 1, ID: 1 };
+function hijriMonth(d) { try { return +new Intl.DateTimeFormat('en-u-ca-islamic-umalqura', { month: 'numeric' }).format(d); } catch (e) { return 0; } }
+const HOL_TR = { 'Christmas Day': 'Noel', 'Christmas Eve': 'Noel arifesi', 'Boxing Day': 'Noel\'in ikinci günü', 'St. Stephen\'s Day': 'Aziz Stefan Günü', 'New Year\'s Eve': 'Yılbaşı gecesi', 'New Year’s Eve': 'Yılbaşı gecesi', 'Good Friday': 'Kutsal Cuma', 'Easter Sunday': 'Paskalya', 'Easter Monday': 'Paskalya Pazartesisi', 'Holy Saturday': 'Kutsal Cumartesi', 'Maundy Thursday': 'Kutsal Perşembe', 'Ascension Day': 'Göğe Yükseliş Günü', 'Pentecost': 'Pentekost', 'Whit Monday': 'Pentekost Pazartesisi', 'Corpus Christi': 'Kutsal Beden Bayramı', 'Assumption': 'Meryem\'in Göğe Kabulü', 'Assumption Day': 'Meryem\'in Göğe Kabulü', 'All Saints\' Day': 'Azizler Günü', 'All Saints’ Day': 'Azizler Günü', 'Immaculate Conception': 'Lekesiz Gebelik Bayramı', 'Epiphany': 'Epifani (Üç Kral)', 'Labour Day': 'İşçi Bayramı', 'Labor Day': 'İşçi Bayramı', 'May Day': '1 Mayıs', 'National Day': 'Ulusal gün', 'National Holiday': 'Ulusal bayram', 'Independence Day': 'Bağımsızlık Günü', 'Spring Festival': 'Bahar Bayramı (Çin Yeni Yılı)', 'Mid-Autumn Festival': 'Ay Festivali', 'Dragon Boat Festival': 'Ejderha Teknesi Festivali', 'Shrove Tuesday': 'Karnaval Salısı', 'Shrove Monday': 'Karnaval Pazartesisi', 'Carnival': 'Karnaval', 'Thanksgiving Day': 'Şükran Günü', 'Thanksgiving': 'Şükran Günü', 'Armistice Day': 'Ateşkes Günü', 'Victory Day': 'Zafer Bayramı', 'German Unity Day': 'Alman Birliği Günü', 'Early May bank holiday': 'Mayıs başı banka tatili', 'Spring bank holiday': 'Bahar banka tatili', 'Summer bank holiday': 'Yaz banka tatili', 'Midsummer Eve': 'Yaz Dönümü Arifesi', 'Midsummer Day': 'Yaz Dönümü', 'First day of Ramadan': 'Ramazan\'ın ilk günü', 'Islamic New Year': 'Hicri Yılbaşı', 'Birthday of Muhammad (Mawlid)': 'Mevlid Kandili', 'Day of the Dead': 'Ölüler Günü', 'Halloween': 'Cadılar Bayramı', 'King’s Day': 'Kral Günü', 'Constitution Day': 'Anayasa Günü', 'Republic Day': 'Cumhuriyet Bayramı', 'Women’s Carnival Day': 'Kadınlar Karnaval Günü' };
+function holName(n) { if (Array.isArray(n)) return LANG === 'tr' ? n[1] : n[0]; if (LANG !== 'tr') return n; const k = n.replace(/\s*\((substitute day|observed)\)/i, ''); const t = HOL_TR[k] || HOL_TR[k.replace(/’/g, '\'')]; return t ? t + (k !== n ? TX(' (telafi)') : '') : n; }
+/* seyahatin noktaları (etkinlik eşleşmesi için) */
+function tripPoints(name) {
+  const pts = [], p = tripPin(name); if (p) pts.push(p);
+  for (const t of S.tickets) if (t.trip === name) { if (hasC(t)) pts.push({ lat: t.lat, lon: t.lon }); if (t.type === 'ucak') { const a = apRec(t.to); if (a && a.cc !== HOME_CC) pts.push(a); } }
+  return pts;
+}
+/* { day, end, kind:'hol'|'ev'|'wk', t, s, tag, ver, ap, q } — seyahat aralığı (±1 gün) */
+function tripSpecial(name) {
+  if (!window.HOL || !EVD) return [];
+  const g = allTrips().find(x => x.name === name); if (!g || !g.a) return [];
+  const A0 = addDays(g.a, -1), B0 = addDays(g.e || g.a, 1), out = [], ccs = tripCCs(name).length ? tripCCs(name) : [HOME_CC];
+  const yrs = [...new Set([A0.slice(0, 4), B0.slice(0, 4)])].map(Number);
+  for (const cc of ccs) {
+    const H = window.HOL[cc]; if (!H) continue;
+    for (const e of H.d.split(' ')) {
+      const m = /^(\d{6})(?:\+(\d+))?:(\d+)([bo]?)$/.exec(e); if (!m) continue;
+      const day = '20' + m[1].slice(0, 2) + '-' + m[1].slice(2, 4) + '-' + m[1].slice(4, 6), n = +(m[2] || 1), end = addDays(day, n - 1);
+      if (end < A0 || day > B0) continue;
+      const nm = holName(H.n[+m[3]]), typ = m[4];
+      out.push({ day, end, kind: typ === 'o' ? 'obs' : 'hol', t: nm, s: typ === 'o' ? TX('Önemli gün · kalabalık ya da kısa çalışma saatleri olabilir') : typ === 'b' ? TX('Banka tatili · bankalar ve bazı dükkânlar kapalı') : TX('Resmi tatil · dükkân, banka ve müzelerin çoğu kapalı olabilir; toplu taşıma tatil tarifesinde'), tag: ccs.length > 1 ? countryName(cc) : '', cc });
+    }
+  }
+  const pts = tripPoints(name);
+  for (const ev of EVD.ev || []) {
+    if (!ccs.includes(ev.c)) continue;
+    if (ev.ll && pts.length && !pts.some(p => distKm(p, { lat: ev.ll[0], lon: ev.ll[1] }) <= 60)) continue;
+    if (ev.ll && !pts.length) continue;
+    for (const y of yrs) for (const yy of [y - 1, y]) {
+      const r = evRange(ev, yy); if (!r || r.b < A0 || r.a > B0) continue;
+      if (out.some(o => o.id === ev.id && o.day === r.a)) continue;
+      const L = LANG === 'tr' ? 0 : 1;
+      out.push({ id: ev.id, day: r.a, end: r.b, kind: 'ev', t: ev.n[L], s: (ev.t || [])[L] || '', ver: r.ver, ap: !r.ver && ev.ap, w: ev.w ? ev.w[L] : '', q: `${ev.n[1]} ${yy} dates` });
+    }
+  }
+  /* haftalık dikkat */
+  for (let d = g.a; d <= (g.e || g.a); d = addDays(d, 1)) {
+    const wd = new Date(d + 'T12:00').getDay();
+    for (const cc of ccs) {
+      const tag = ccs.length > 1 ? countryName(cc) : '';
+      if (wd === 0 && SUN_CLOSED[cc] && !(cc === 'PL' && PL_TRADE_SUN.includes(d)))
+        out.push({ day: d, end: d, kind: 'wk', t: TX('Pazar · marketler kapalı'), s: cc === 'HR' ? TX('Dükkânlar yılda yalnız 16 Pazar açılabilir; yazın sahilde çoğu açık olur. İstasyon, havalimanı ve benzinlikler açık.') : cc === 'NO' ? TX('Yalnız küçük marketler (100 m² altı), benzinlik ve kiosklar açık. Alışverişi Cumartesi yap.') : TX('Büyük market ve dükkânlar kapalı; istasyon, havalimanı ve benzinlik marketleri açık. Alışverişi Cumartesi yap.'), tag });
+      if (FRI_SAT[cc] && wd === 5) out.push({ day: d, end: addDays(d, 1), kind: 'wk', t: cc === 'IL' ? TX('Şabat (Cuma akşamı – Cumartesi akşamı)') : TX('Hafta sonu: Cuma–Cumartesi'), s: cc === 'IL' ? TX('Toplu taşımanın çoğu durur, dükkânlar kapanır; taksi ve kiralık araç plana göre.') : TX('Resmi daireler ve bankalar kapalı; Cuma öğle namazı saatinde dükkânlar kısa süre kapanabilir.'), tag });
+      if (MUSEUM_OFF[cc] && wd === MUSEUM_OFF[cc]) out.push({ day: d, end: d, kind: 'wk', t: wd === 1 ? TX('Pazartesi · çoğu müze kapalı') : TX('Salı · bazı büyük müzeler kapalı'), s: cc === 'FR' ? TX('Louvre gibi bazı ulusal müzeler Salı kapalı (Orsay Pazartesi). Gitmeden saatlerine bak.') : TX('Devlet müzelerinin çoğu Pazartesi kapalı. Gitmeden saatlerine bak.'), tag });
+    }
+  }
+  for (const cc of ccs) if (SIESTA[cc]) out.push({ day: g.a, end: g.e || g.a, kind: 'wk', t: TL`Öğle arası (${SIESTA[cc]})`, s: TX('Küçük dükkânlar öğleden sonra kapanabilir; büyük mağazalar ve turistik yerler açık.'), tag: ccs.length > 1 ? countryName(cc) : '', every: 1 });
+  for (const cc of ccs) if (RAMADAN_CC[cc]) {
+    let a = null, b = null; for (let d = g.a; d <= (g.e || g.a); d = addDays(d, 1)) if (hijriMonth(new Date(d + 'T12:00')) === 9) { a = a || d; b = d; }
+    if (a) out.push({ day: a, end: b, kind: 'wk', t: TX('Ramazan'), s: TX('Gündüz bazı restoranlar kapalı; halka açık yerde yeme-içmeye dikkat. İftar sonrası şehir canlanır.'), tag: ccs.length > 1 ? countryName(cc) : '', every: 1 });
+  }
+  const rank = { hol: 0, ev: 1, obs: 2, wk: 3 };
+  return out.sort((x, y) => x.day < y.day ? -1 : x.day > y.day ? 1 : rank[x.kind] - rank[y.kind]);
+}
+const spOn = (it, day) => it.day <= day && it.end >= day;
+/* gün koçanı çipleri (tatil/etkinlik + o güne özel dikkat) */
+function spChips(sp, day, seen) {
+  const on = sp.filter(x => !x.every && spOn(x, day) && !(seen && x.end > x.day && seen.has(x))); if (!on.length) return '';
+  if (seen) on.forEach(x => seen.add(x));
+  return on.slice(0, 2).map(x => `<span class="dchip sp-${x.kind}">${x.kind === 'ev' ? '🎉' : x.kind === 'wk' ? '⚠' : '★'} ${esc(x.t.length > 26 ? x.t.slice(0, 25) + '…' : x.t)}</span>`).join('');
+}
+function spHtml(name) {
+  const sp = tripSpecial(name); if (!sp.length) return '';
+  const g = allTrips().find(x => x.name === name) || {};
+  const fd = d => new Date(d + 'T12:00').toLocaleDateString(LOC, { day: 'numeric', month: 'short', weekday: 'short' });
+  const rows = sp.map(x => {
+    const range = x.every ? TX('Her gün') : x.end !== x.day ? `${fd(x.day)} – ${fd(x.end)}` : fd(x.day);
+    const lab = x.kind === 'ev' ? (x.ver ? TL`<span class="spl ok">${I('check')} Doğrulandı · ${x.ver}</span>` : x.ap ? TL`<span class="spl ap">Yaklaşık</span>` : '') : x.kind === 'hol' ? TX('<span class="spl hol">Resmi tatil</span>') : x.kind === 'obs' ? TX('<span class="spl">Önemli gün</span>') : TX('<span class="spl wk">Dikkat</span>');
+    const out = x.day < (g.a || '') || x.day > (g.e || g.a || '') ? ' out' : '';
+    return `<div class="spi sp-${x.kind}${out}"><i class="spd"></i><div class="spb"><small>${esc(range)}${x.tag ? ' · ' + esc(x.tag) : ''}</small><b>${esc(x.t)}</b>${lab}${x.s ? `<p>${esc(x.s)}</p>` : ''}${x.w ? `<p class="spw">${esc(x.w)}</p>` : ''}${x.q && !x.ver ? TL`<button class="spq" data-q="${esc(x.q)}">${I('external-link')} Tarihleri kontrol et</button>` : ''}</div></div>`;
+  }).join('');
+  return TL`<div class="exsec">Seyahatindeki özel günler</div><div class="sptl">${rows}</div>`;
+}
+function spCount(name) { return tripSpecial(name).filter(x => x.kind === 'hol' || x.kind === 'ev').length; }
+
 function renderCInfo(app, anim) {
   const { name, ci } = S.cinfo || {}; if (!ci) { go('home'); return; }
   const row = (ic, k, v, sub) => v ? `<div class="vrow"><span class="vri">${I(ic)}</span><span class="vrt"><small>${esc(k)}</small><b>${esc(v)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</span></div>` : '';
@@ -1000,8 +1131,9 @@ function renderCInfo(app, anim) {
       ${ci.water === 0 ? row('droplet', TX('Musluk suyu'), TX('Genelde içilmez'), TX('Şişe su tercih et, buz ve çiğ sebzeye dikkat')) : ''}
       ${tr ? row('bus', TL`${ci.city} ulaşımı`, tr) : ''}
       ${ci.foreign ? row('id', TX('Giriş koşulları'), TX('Vize / giriş koşullarını kontrol et'), TX('Kurallar değişebiliyor; resmi kaynaktan bak')) : ''}
-    </div><p class="snote">Bilgiler internetsiz çalışır ve "genelde" geçerlidir; yerel duyurular önceliklidir.</p></div></div>`;
+    </div>${spHtml(name)}<p class="snote">Bilgiler internetsiz çalışır ve "genelde" geçerlidir; yerel duyurular önceliklidir.</p></div></div>`;
   $('#back').onclick = () => go('home', 'back');
+  $$('.spq', app).forEach(b => b.onclick = () => openUrl('https://www.google.com/search?q=' + encodeURIComponent(b.dataset.q)));
 }
 
 /* ================= 5.9: masraflar ================= */
@@ -1111,12 +1243,19 @@ function renderExp(app, anim) {
   const ppl = TL`<div class="exsec">Kim ne ödedi</div><div class="vrows">${rec.people.map((p, i) => `<button class="exp-p" data-pp="${i}"><span class="av" style="--h:${(i * 67) % 360}">${esc(p.slice(0, 1).toLocaleUpperCase(LANG))}</span><span class="ext"><b>${esc(p)}</b><small>${sm.bal[p] > 0.5 ? TL`${fmtMoney(sm.bal[p], b)} alacaklı` : sm.bal[p] < -0.5 ? TL`${fmtMoney(-sm.bal[p], b)} borçlu` : TX('Hesap kapalı')}</small></span><span class="exa"><b>${fmtMoney(sm.paid[p], b)}</b></span></button>`).join('')}
       <button class="exp-p add" id="pAdd">${I('user-plus')}<span class="ext"><b>Kişi ekle</b></span></button></div>
     <div class="exsec">Hesaplaşma</div>${sm.settle.length ? `<div class="vrows">${sm.settle.map(s => `<div class="exr"><span class="ext"><b>${esc(s.from)} → ${esc(s.to)}</b></span><span class="exa"><b>${fmtMoney(s.v, b)}</b></span></div>`).join('')}</div>` : TX('<p class="snote">Herkes ödeşmiş görünüyor.</p>')}`;
+  /* 5.26: fiş görünümü (A) */
+  const rng = g.a ? (g.e && g.e !== g.a ? fmtRange(g.a, g.e) : fmtDate(g.a)) : '';
+  const rcpt = TL`<div class="rcpt"><div class="rch"><b>${esc(name)}</b><small>${[rng, multi ? TL`${rec.people.length} kişi` : ''].filter(Boolean).map(esc).join(' · ')}</small></div>
+    <div class="exlist">${list}</div><div class="rcd"></div>
+    <div class="rct"><span>TOPLAM</span><b>${fmtMoney(sm.total, b)}</b></div>
+    <div class="rcs">${[multi ? TL`Kişi başı ${fmtMoney(sm.total / rec.people.length, b)}` : '', sm.days ? TL`günde ${fmtMoney(sm.total / sm.days, b)}` : ''].filter(Boolean).join(' · ')}${sm.unknown ? TL` · ${sm.unknown} masrafın kuru yok` : ''}</div>
+    ${sm.byCat.length ? `<div class="exbar">${sm.byCat.map(c => `<i style="flex:${c.v};background:${c.c}"></i>`).join('')}</div>` : ''}
+    ${multi && sm.settle.length ? `<div class="rcd"></div>${sm.settle.map(x => `<div class="rcl"><span>${esc(x.from)} → ${esc(x.to)}</span><b>${fmtMoney(x.v, b)}</b></div>`).join('')}` : ''}</div>`;
   app.innerHTML = TL`<div class="page expp${animCls(anim)}">
     <div class="bar"><button class="icon-btn" id="back" aria-label="Geri">←</button><div class="vt"><b>Masraflar</b><small>${esc(name)}</small></div><button class="icon-btn" id="pMng" aria-label="Kişiler">${I('users')}</button></div>
     <div class="sbody">
       ${multi ? TL`<div class="seg exseg"><button class="${tab === 'list' ? 'on' : ''}" data-xt="list">${I('receipt')} Masraflar</button><button class="${tab === 'ppl' ? 'on' : ''}" data-xt="ppl">${I('users')} Kişiler</button></div>` : ''}
-      ${sumCard}
-      ${tab === 'ppl' ? ppl : its.length ? `<div class="exlist">${list}</div>` : TL`<p class="snote">Henüz masraf yok. Biletlerine fiyat girersen burada kendiliğinden görünür.</p>`}
+      ${tab === 'ppl' ? sumCard + ppl : its.length ? rcpt : TL`<p class="snote">Henüz masraf yok. Biletlerine fiyat girersen burada kendiliğinden görünür.</p>`}
       <p class="snote exfx">${FX && FX.base === b ? TL`Kur: Avrupa Merkez Bankası · ${esc(fmtDate(FX.date))}` : TX('Kur henüz alınmadı')} · <button id="fxR">Yenile</button> · Ana para: ${b}</p>
     </div>
     <button class="fab exfab" id="exAdd" aria-label="Masraf ekle">${I('plus')}</button></div>`;
@@ -1414,6 +1553,157 @@ async function sharedImageChoice(file) {
   if (trips.length > 1) { const n = await sheetMenu(TX('Hangi seyahat?'), trips.slice(0, 8).map(g => ({ icon: I('luggage'), label: g.name, sub: g.a ? fmtRange(g.a, g.e || g.a) : '', value: g.name }))); if (!n) return true; name = n; }
   busy(TX('Fotoğraf ekleniyor…')); await getShop(); let ph = null; try { ph = await shopPhotoFrom(file); } finally { busy(false); } shopDialog(name, null, { ph }); return true;
 }
+/* ================= 5.26: Otopark yeri (seyahat başına) =================
+   meta.parking = { [seyahat]: { ph:['pk_…'] (en çok 3), note, lat, lon, acc, at } } — yedekte var, paylaşımda yok */
+let PARK = null;
+const PARK_MAX = 3;
+async function getPark() { if (!PARK) PARK = (await metaGet('parking')) || {}; return PARK; }
+async function savePark() { await metaSet('parking', PARK || {}); }
+const isTrans = t => t.type === 'ucak' || t.type === 'ulasim';
+/* seyahatin gidiş ve dönüş ulaşım biletleri */
+function tripLegs(name) {
+  const ts = S.tickets.filter(t => t.trip === name && isTrans(t) && t.date && t.status !== 'cancel' && t.status !== 'missed')
+    .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
+  if (!ts.length) return {};
+  const home = c => { const r = apRec(c); return r && r.cc === HOME_CC; };
+  const out = ts.find(t => t.type !== 'ucak' || home(t.from)) || ts[0], rev = ts.slice().reverse();
+  const ret = rev.find(t => t !== out && t.type === 'ucak' && home(t.to)) || (rev[0] !== out ? rev[0] : null);
+  return { out, ret };
+}
+/* bilet saatini kalkış yerinin saat diliminde mutlak zamana çevir (bilinmezse cihaz saati) */
+function depAbs(t) {
+  const tm = t.time || '12:00', r = t.type === 'ucak' && apRec(t.from), ci = r && window.CINFO && CINFO[r.cc], tz = ci && ci.tz;
+  if (!tz) return at(t.date, tm);
+  const [y, m, d] = t.date.split('-').map(Number), [h, mi] = tm.split(':').map(Number), u = Date.UTC(y, m - 1, d, h, mi);
+  return u - tzOffsetMin(tz, new Date(u)) * 60000;
+}
+/* gidiş günü, kalkıştan 6 saat önceden itibaren "park ettin mi?" */
+function parkDue(name) {
+  const { out } = tripLegs(name); if (!out || out.date !== todayStr()) return false;
+  return !out.time || Date.now() >= depAbs(out) - 6 * 3600000;
+}
+/* hatırlatma zamanı: dönüş inişi + 20 dk (iniş saati yok → kalkış + mesafeden süre), dönüş bileti yoksa son gün 09:00 */
+function parkWhen(name) {
+  const { ret } = tripLegs(name), g = allTrips().find(x => x.name === name);
+  if (ret) {
+    if (!ret.time) return at(ret.date, '09:00');
+    if (ret.type === 'ulasim' && ret.endTime && ret.endTime > ret.time) return at(ret.date, ret.endTime) + 20 * 60000;
+    const a = apRec(ret.from), b = apRec(ret.to);
+    const h = ret.type === 'ucak' && a && b ? distKm(a, b) / 800 + 0.5 : DUR_H[ret.type] || 3;
+    return depAbs(ret) + h * 3600000 + 20 * 60000;
+  }
+  return g && g.e ? at(g.e, '09:00') : null;
+}
+function parkReminders(now) {
+  const out = [];
+  for (const [name, r] of Object.entries(PARK || {})) {
+    const w = parkWhen(name); if (!w || w <= now + 30000 || w > now + 120 * 86400000) continue;
+    out.push({ at: w, title: TL`Aracın otoparkta · ${name}`, text: r.note ? TL`Aracın: ${r.note}` : TX('Park yerinin fotoğrafı DoraGo\'da'), ticket: 'park:' + name, kind: 'p',
+      acts: JSON.stringify([{ l: TX('Fotoğrafı aç'), v: 'park:' + name }, { l: TX('Araç alındı'), v: 'parkdone:' + name }]) });
+  }
+  return out;
+}
+/* satır: kayıtlıysa "Aracın: …", değilse (gidiş günü) "Aracını park ettin mi?" */
+function parkRowHtml(name, ask) {
+  if (!PARK) { getPark().then(() => quietRender()); return ''; }
+  const r = PARK[name];
+  if (r) {
+    const when = new Date(r.at || Date.now()).toLocaleString(LOC, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return TL`<button class="vrow pkr ok" data-park="${esc(name)}"><span class="vri">${I('car')}</span><span class="vrt"><small>Otopark</small><b>${r.note ? TL`Aracın: ${esc(r.note)}` : TX('Aracının yeri kayıtlı')}</b><span>${esc(when)}${hasC(r) ? ' · ' + TX('konumlu') : ''}</span></span>${r.ph && r.ph[0] ? `<span class="pkth" data-pkph="${esc(r.ph[0])}"></span>` : ''}</button>`;
+  }
+  if (ask && parkDue(name)) return TL`<button class="vrow pkr" data-parkadd="${esc(name)}"><span class="vri">${I('car')}</span><span class="vrt"><small>Otopark</small><b>Aracını park ettin mi?</b><span>Kat/sıra fotoğrafını kaydet, dönüşte hatırlatırım</span></span><span class="pkgo">Kaydet</span></button>`;
+  return '';
+}
+function bindPark(root) {
+  $$('[data-park]', root).forEach(b => b.onclick = () => parkSheet(b.dataset.park));
+  $$('[data-parkadd]', root).forEach(b => b.onclick = () => parkDialog(b.dataset.parkadd));
+  $$('[data-pkph]', root).forEach(async e => { const bl = await photoBlob(e.dataset.pkph); if (bl && e.isConnected) e.style.backgroundImage = `url('${blobURL('p:' + e.dataset.pkph, bl)}')`; });
+}
+async function parkPhotoFrom(file) { const s = await shrinkPhoto(file, 1600), id = 'pk_' + uid(); await putPages([{ id, w: s.w, h: s.h, blob: s.blob }]); PHB.set(id, s.blob); return id; }
+/* kaydetme penceresi: foto (en çok 3) + not + anlık konum */
+async function parkDialog(name) {
+  await getPark();
+  const r0 = PARK[name] || {}, st = { ph: [...(r0.ph || [])], note: r0.note || '', lat: r0.lat, lon: r0.lon, acc: r0.acc, geo: hasC(r0) ? 'ok' : '' }, added = [];
+  const ov = document.createElement('div'); ov.className = 'ov';
+  const keep = () => { const n = $('#pkN', ov); if (n) st.note = n.value; };
+  const geoTxt = () => st.geo === 'ok' ? TL`${I('current-location')} Konum eklendi${st.acc ? ` · ±${Math.round(st.acc)} m` : ''}` : st.geo === 'busy' ? TX('Konum alınıyor…') : st.geo === 'no' ? TX('Konum alınamadı (izin ya da GPS kapalı)') : TL`${I('current-location')} Konumu ekle`;
+  const draw = () => {
+    ov.innerHTML = TL`<div class="dlg sheet pkdlg"><h3>Otopark yeri</h3>
+      <div class="pkph">${st.ph.map((id, i) => `<span class="pkp" data-pkph="${esc(id)}"><button class="pkx" data-pkx="${i}" aria-label="${TX('Sil')}">×</button></span>`).join('')}
+        ${st.ph.length < PARK_MAX ? TL`<button class="pkp add" data-pa="cam">${I('camera')}<small>Fotoğraf çek</small></button>` : ''}</div>
+      ${st.ph.length < PARK_MAX ? TL`<button class="lnk" data-pa="gal">${I('photo')} Galeriden seç</button>` : ''}
+      <div class="fld"><label for="pkN">Not <small>kat, sıra, otopark adı</small></label><input class="inp" id="pkN" maxlength="60" value="${esc(st.note)}" placeholder="Örn. B2 · sıra 14 · P3 otoparkı"></div>
+      <button class="pkgeo ${st.geo}" data-pa="geo">${geoTxt()}</button>
+      <p class="snote">Dönüş günü hatırlatırım. Bilgiler yalnız bu telefonda kalır, paylaşılmaz.</p>
+      <div class="row2"><button class="btn" data-pa="cancel">Vazgeç</button><button class="btn pri" data-pa="ok">Kaydet</button></div></div>`;
+    bindPark(ov);
+  };
+  const getGeo = () => {
+    if (!navigator.geolocation) { st.geo = 'no'; return; }
+    st.geo = 'busy';
+    navigator.geolocation.getCurrentPosition(p => { st.lat = +p.coords.latitude.toFixed(6); st.lon = +p.coords.longitude.toFixed(6); st.acc = p.coords.accuracy; st.geo = 'ok'; if (ov.isConnected) { keep(); draw(); } },
+      () => { st.geo = 'no'; if (ov.isConnected) { keep(); draw(); } }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 });
+  };
+  const close = async save => {
+    if (!save && added.length) await delPages(added);
+    ov.remove(); dlgClose = null;
+  };
+  ov.addEventListener('click', async e => {
+    const a = e.target.closest('[data-pa]'), x = e.target.closest('[data-pkx]');
+    if (x) { keep(); const id = st.ph.splice(+x.dataset.pkx, 1)[0]; if (added.includes(id)) { added.splice(added.indexOf(id), 1); await delPages([id]); } draw(); return; }
+    if (e.target === ov || (a && a.dataset.pa === 'cancel')) { close(false); return; }
+    if (!a) return;
+    const act = a.dataset.pa;
+    if (act === 'cam' || act === 'gal') {
+      keep(); const fs = await pickFiles('image/*', act === 'gal', act === 'cam'); if (!fs.length) return;
+      busy(TX('Fotoğraf ekleniyor…'));
+      try { for (const f of fs.slice(0, PARK_MAX - st.ph.length)) { const id = await parkPhotoFrom(f); st.ph.push(id); added.push(id); } } finally { busy(false); }
+      if (!st.geo) getGeo(); draw(); return;
+    }
+    if (act === 'geo') { keep(); if (st.geo !== 'busy') { getGeo(); draw(); } return; }
+    if (act === 'ok') {
+      keep();
+      if (!st.ph.length && !st.note.trim() && st.geo !== 'ok') { toast(TX('Fotoğraf ya da not ekle')); return; }
+      const gone = (r0.ph || []).filter(id => !st.ph.includes(id)); if (gone.length) await delPages(gone);
+      PARK[name] = { ph: st.ph, note: st.note.trim(), at: r0.at || Date.now(), ...(st.geo === 'ok' && st.lat != null ? { lat: st.lat, lon: st.lon, acc: st.acc } : {}), updatedAt: Date.now() };
+      await savePark(); added.length = 0; await close(true); tick(); toast(TX('Otopark yeri kaydedildi')); syncReminders(true); render();
+    }
+  });
+  dlgClose = () => close(false); draw(); noAnimAfter(ov); document.body.appendChild(ov);
+  if (!st.geo && !r0.at) getGeo(), draw();
+}
+/* kayıtlı yer: büyük foto, not, "Haritada yürü", "Araç alındı" */
+async function parkSheet(name) {
+  await getPark(); const r = PARK[name]; if (!r) return parkDialog(name);
+  const ov = document.createElement('div'); ov.className = 'ov';
+  const when = new Date(r.at || Date.now()).toLocaleString(LOC, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  ov.innerHTML = TL`<div class="dlg sheet pksh"><h3>${I('car')} Aracın</h3>
+    ${r.ph && r.ph.length ? `<div class="pkbig${r.ph.length > 1 ? ' n' : ''}">${r.ph.map((id, i) => `<button class="pkb" data-pkph="${esc(id)}" data-pkv="${i}"></button>`).join('')}</div>` : ''}
+    ${r.note ? `<div class="pknote">${esc(r.note)}</div>` : ''}
+    <p class="snote">${TL`Park: ${esc(when)} · ${esc(name)}`}</p>
+    <div class="pkacts">${hasC(r) ? TL`<button class="btn" data-pk="walk">${I('walk')} Haritada yürü</button>` : ''}<button class="btn" data-pk="edit">${I('pencil')} Düzenle</button></div>
+    <div class="row2"><button class="btn" data-pk="close">Kapat</button><button class="btn pri" data-pk="done">${I('check')} Araç alındı</button></div></div>`;
+  const close = () => { ov.remove(); dlgClose = null; };
+  bindPark(ov);
+  $$('[data-pkv]', ov).forEach(b => b.onclick = async e => { e.stopPropagation(); const bl = []; for (const id of r.ph) { const x = await photoBlob(id); if (x) bl.push(x); } if (bl.length) openLightbox(bl, +b.dataset.pkv, { bright: true }); });
+  ov.addEventListener('click', async e => {
+    const a = e.target.closest('[data-pk]');
+    if (e.target === ov || (a && a.dataset.pk === 'close')) { close(); return; }
+    if (!a) return;
+    if (a.dataset.pk === 'walk') openUrl(`https://www.google.com/maps/dir/?api=1&destination=${r.lat},${r.lon}&travelmode=walking`);
+    else if (a.dataset.pk === 'edit') { close(); parkDialog(name); }
+    else if (a.dataset.pk === 'done') { close(); await parkDone(name); }
+  });
+  dlgClose = close; noAnimAfter(ov); document.body.appendChild(ov);
+}
+async function parkDone(name) {
+  await getPark(); const r = PARK[name]; if (!r) { toast(TX('Otopark kaydı yok')); return; }
+  if (r.ph && r.ph.length) await delPages(r.ph);
+  delete PARK[name]; await savePark(); tick(); toast(TX('İyi yolculuklar! Otopark kaydı silindi')); syncReminders(true); render();
+}
+async function movePark(from, to) { await getPark(); if (!PARK[from]) return; if (!PARK[to]) PARK[to] = PARK[from]; else if (PARK[from].ph) await delPages(PARK[from].ph); delete PARK[from]; await savePark(); }
+async function dropPark(name) { await getPark(); const r = PARK[name]; if (!r) return; if (r.ph && r.ph.length) await delPages(r.ph); delete PARK[name]; await savePark(); }
+
 function shopReminders(now) {
   const out = []; if (!SHOP) return out;
   for (const g of allTrips()) {
@@ -1853,6 +2143,25 @@ function docsWarnings() {
 async function openDocs() { await getDocs(); await loadVisa(); await loadWorld(); S.docPid = null; go('docs'); }
 function stampHtml(code, col) { return `<span class="dstamp" style="--c:${col}">${esc(code)}</span>`; }
 function passBadge(p) { const t = todayStr(); if (!p.pexp) return TX('<span class="dbd wn">Tarih yok</span>'); if (p.pexp < t) return TX('<span class="dbd er">Bitti</span>'); if (p.pexp < addMonths(t, 6)) return TX('<span class="dbd wn">6 ay</span>'); return `<span class="dbd ok">${I('check')}</span>`; }
+/* 5.26 Belgelerim: pasaport kapağı kartları + vize damgaları */
+const daysBetween = (a, b) => Math.round((new Date(b + 'T12:00') - new Date(a + 'T12:00')) / 864e5);
+const PASS_COL = { navy: '#1E3557', green: '#1F4D35', black: '#1F2226', red: '#8E1B22', maroon: '#6E1A22' };
+const PASS_BY = { US: 'navy', GB: 'navy', CA: 'navy', AU: 'navy', BR: 'navy', IN: 'navy', AR: 'navy', MX: 'green', UA: 'navy', KZ: 'navy', NZ: 'black', CH: 'red', JP: 'red', SA: 'green', PK: 'green', MA: 'green', DZ: 'green', EG: 'green', NG: 'green', IR: 'navy', AZ: 'navy', AE: 'navy', QA: 'maroon', TR: 'maroon' };
+function passCover(p) {
+  const col = PASS_COL[PASS_BY[p.pcc] || 'maroon'], dl = p.pexp ? daysBetween(todayStr(), p.pexp) : null;
+  const yrs = dl != null && dl > 365 ? Math.floor(dl / 365) : 0;
+  const sub = !p.pexp ? TX('Bitiş tarihi yok') : dl < 0 ? TX('Süresi doldu') : yrs ? TL`Bitiş ${p.pexp.slice(0, 4)} · ${yrs} yıl` : TL`Bitiş ${dl} gün sonra`;
+  const lvl = dl == null ? '' : dl < 183 ? 'er' : dl < 365 ? 'wn' : '';
+  return `<button class="ppc" data-pid="${esc(p.id)}" style="--pc:${col}"><small>${esc((countryName(p.pcc || '') || '').toLocaleUpperCase(LANG))}</small><i class="ppg-g">${I('world')}</i><b>${esc(p.name)}</b><span class="${lvl}">${esc(sub)}</span></button>`;
+}
+function visaStamp(v, i) {
+  const ok = v.status === 'ok' && !(v.to && v.to < todayStr()), rej = v.status === 'rej', exp = v.status === 'ok' && v.to && v.to < todayStr();
+  const col = rej || exp ? '#B91C1C' : ok ? (v.region === 'SCH' ? '#1D4ED8' : '#0F6E56') : '#B45309';
+  const st = ok ? TX('GEÇERLİ') : exp ? TX('BİTTİ') : rej ? VSTAT.rej.toLocaleUpperCase(LANG) : (VSTAT[v.status] || '').toLocaleUpperCase(LANG);
+  const det = ok ? [v.entry === 'multi' ? TX('ÇOK GİRİŞ') : v.entry === 'single' ? TX('TEK GİRİŞ') : '', v.to ? fdate(v.to) : ''] : [v.status === 'appt' && v.appt ? `${fdate(v.appt.slice(0, 10))} ${v.appt.slice(11, 16)}` : ''];
+  const rot = [-7, 5, -3, 8, -5, 3][i % 6], round = v.kind === 'eta' || v.kind === 'evisa';
+  return `<button class="vst${ok ? '' : ' pend'}${round ? ' rnd' : ''}" data-vid="${esc(v.id)}" style="--sc:${col};--r:${rot}deg"><b>${esc(regionName(v.region).toLocaleUpperCase(LANG))}</b>${v.kind && v.kind !== 'visa' ? `<small>${esc(VKIND[v.kind])}</small>` : ''}<em>${esc(st)}</em>${det.filter(Boolean).length ? `<small>${esc(det.filter(Boolean).join(' · '))}</small>` : ''}</button>`;
+}
 function visaRow(v) {
   const st = v.status === 'ok' ? (v.to && v.to < todayStr() ? ['er', TX('Bitti')] : ['ok', TX('Geçerli')]) : v.status === 'rej' ? ['er', VSTAT.rej] : ['wn', VSTAT[v.status]];
   const who = (v.people || []).map(id => (person(id) || {}).name).filter(Boolean).join(', ');
@@ -1868,13 +2177,13 @@ function renderDocs(app, anim) {
   if (me) {
     const vs = DOCS.visas.filter(v => (v.people || []).includes(me.id));
     body = TL`<button class="dpass" id="dPass"><small>${esc(countryName(me.pcc).toLocaleUpperCase(LANG))} · PASAPORT</small><b>${me.plast ? '···· ' + esc(me.plast) : esc(me.name)}</b><span>${me.pexp ? TL`Bitiş ${fdate(me.pexp)}` : TX('Bitiş tarihini ekle')}</span>${(me.ppages || []).length ? I('paperclip') : ''}</button>
-      <div class="exsec">Vizeler</div>${vs.length ? `<div class="vrows">${vs.map(visaRow).join('')}</div>` : TX('<p class="snote">Bu kişi için vize kaydı yok.</p>')}
+      <div class="exsec">Vizeler</div>${vs.length ? `<div class="vpage">${vs.map(visaStamp).join('')}</div>` : TX('<p class="snote">Bu kişi için vize kaydı yok.</p>')}
       <div class="exsec">Schengen 90/180</div><div class="vrows" style="padding:12px">${schBar(me.id)}</div>
       ${me.id !== 'me' ? TX('<button class="btn dan" id="dDelP" style="width:100%;margin-top:16px">Kişiyi sil</button>') : ''}`;
   } else {
     const sch = DOCS.people.filter(p => DOCS.visas.some(v => v.region === 'SCH' && (v.people || []).includes(p.id)) || schengenDays(p.id, todayStr()) > 0);
     body = TL`${warns.length ? `<div class="dwarn">${warns.slice(0, 6).map(w => `<p class="${w.lvl}">${I(w.lvl === 'info' ? 'calendar-event' : 'alert-triangle')}<span>${esc(w.txt)}</span></p>`).join('')}</div>` : ''}
-      <div class="exsec">Pasaportlar</div><div class="vrows">${DOCS.people.map(p => `<button class="drow" data-pid="${esc(p.id)}">${stampHtml(p.pcc || '?', '#7A1F1F')}<span class="ext"><b>${esc(p.name)}</b><small>${p.pexp ? TX('Bitiş ') + fdate(p.pexp) : TX('Bitiş tarihi yok')}${p.plast ? ' · ···· ' + esc(p.plast) : ''}</small></span>${passBadge(p)}</button>`).join('')}<button class="drow add" id="dAddP">${I('user-plus')}<span class="ext"><b>Kişi ekle</b></span></button></div>
+      <div class="exsec">Pasaportlar</div><div class="ppg">${DOCS.people.map(passCover).join('')}<button class="ppc add" id="dAddP">${I('user-plus')}<b>Kişi ekle</b></button></div>
       <div class="exsec">Vizeler</div>${DOCS.visas.length ? `<div class="vrows">${DOCS.visas.slice().sort((x, y) => (y.to || '') < (x.to || '') ? -1 : 1).map(visaRow).join('')}</div>` : TX('<p class="snote">Henüz vize kaydı yok.</p>')}
       ${sch.length ? TL`<div class="exsec">Schengen 90/180</div><div class="vrows" style="padding:12px">${sch.map(p => `${DOCS.people.length > 1 ? `<b class="dschn">${esc(p.name)}</b>` : ''}${schBar(p.id)}`).join('')}</div>` : ''}
       <button class="tmini dlook" id="dLook">${I('world')}<span><small>Vize gerekiyor mu?</small><b>Ülkeye göre bak</b></span></button>
@@ -2288,7 +2597,7 @@ async function pfToggle(t, k) {
 /* ================= 5.7: seyahat sayfası (B düzeni) + anı fotoğrafları ================= */
 const PHOTO_MAX = 10;
 let TP = null; /* { [seyahat]: { cover, items: [{ id, note, date }] } } — fotoğrafların kendisi pages deposunda */
-async function dropTripPhotos(name) { await dropShop(name); await getExp(); if (EXP[name]) { delete EXP[name]; await saveExp(); } await getTP(); const r = TP[name]; if (!r) return; await delPages(r.items.map(i => i.id)); delete TP[name]; await saveTP(); }
+async function dropTripPhotos(name) { await dropShop(name); await dropPark(name); await getExp(); if (EXP[name]) { delete EXP[name]; await saveExp(); } await getTP(); const r = TP[name]; if (!r) return; await delPages(r.items.map(i => i.id)); delete TP[name]; await saveTP(); }
 async function getTP() { if (!TP) TP = (await metaGet('tripPhotos')) || {}; return TP; }
 async function saveTP() { await metaSet('tripPhotos', TP || {}); }
 const PHB = new Map();
@@ -2603,7 +2912,7 @@ async function phSetPos(t, cp) {
   if (cp) fresh.hph.cpos = cp; else delete fresh.hph.cpos;
   await saveTicketDB(fresh, [], []); const i = S.tickets.findIndex(x => x.id === t.id); if (i >= 0) S.tickets[i] = fresh; if (S.cur && S.cur.t && S.cur.t.id === t.id) S.cur.t = fresh; render();
 }
-async function tripsData() { TRIPS_READY = 2; await getTP(); await getPacks(); await getShop(); await getExp(); await getFx(); await getDocs(); await loadVisa(); await loadWorld(); }
+async function tripsData() { TRIPS_READY = 2; await getTP(); await getPacks(); await getShop(); await getPark(); await getExp(); await getFx(); await getDocs(); await loadVisa(); await loadWorld(); }
 async function openTrip(name) {
   await tripsData();
   for (const it of (TP[name] || { items: [] }).items) await photoBlob(it.id);
@@ -2627,13 +2936,14 @@ function tripDays(name, g, ts) {
   const dated = ts.filter(t => t.date), undated = ts.filter(t => !t.date);
   const days = [...new Set(dated.map(t => t.date))];
   const dIdx = d => g.a ? Math.round((new Date(d + 'T12:00') - new Date(g.a + 'T12:00')) / 864e5) + 1 : 0;
-  let out = '', i = 0;
+  const sp = window.HOL && EVD && !g.past ? tripSpecial(name) : (g.past || loadSpecial().then(() => { if (S.view === 'trip' && S.tripName === name) quietRender(); }), []);
+  let out = '', i = 0; const spSeen = new Set();
   for (const day of days) {
     const list = dated.filter(t => t.date === day), key = name + '|' + day, pastD = (day < today && !list.some(t => (t.endDate || t.date) >= today));
     const open = key in S_ ? S_[key] : day === today;
     const [y, m, d] = day.split('-').map(Number), dl = daysLeft(day), wd = new Date(y, m - 1, d).toLocaleDateString(LOC, { weekday: 'short' });
     const n = dIdx(day), lab = [n > 0 ? TL`${n}. gün` : '', dl === 0 ? TX('Bugün') : dl === 1 ? TX('Yarın') : ''].filter(Boolean).join(' · ') || `${wd} ${d}`;
-    out += dayStubHtml({ key, day, list, lab, open, pastD, cards: list.map(t => card(t, (t.endDate || t.date) < today, i++, 'dl')).join('') });
+    out += dayStubHtml({ key, day, list, lab, open, pastD, chips: sp.length ? spChips(sp, day, spSeen) : '', cards: list.map(t => card(t, (t.endDate || t.date) < today, i++, 'dl')).join('') });
   }
   if (undated.length) {
     const key = name + '|-', open = key in S_ ? S_[key] : false;
@@ -2690,8 +3000,8 @@ function renderTrip(app, anim) {
     tile('tmPack', 'briefcase', TX('Bavul'), pc && pc[0] === pc[1] ? 'ok' : '', pc ? pc[1] - pc[0] : 0),
     tile('tmShop', 'shopping-cart', TX('Alınacak'), sc && sc[0] === sc[1] ? 'ok' : '', sc ? sc[1] - sc[0] : 0),
     tile('tmExp', 'cash', TX('Masraf')),
-    tripCCs(name).length ? tile('tmVisa', 'id', vw && vw.lvl !== 'ok' ? TX('Vize') : TX('Vize ✓'), vw ? vw.lvl : 'ok', vw && vw.lvl === 'err' ? '!' : 0) : '',
-    foreign ? tile('tmInfo', 'info-circle', TX('Bilgi')) : '',
+    tripCCs(name).length ? tile('tmVisa', 'id', vw && vw.lvl !== 'ok' ? TX('Vize') : TX('Vize ✓'), vw ? vw.lvl : 'ok', vw && (vw.lvl === 'err' || vw.lvl === 'warn' || vw.lvl === 'info') ? '!' : 0) : '',
+    foreign ? tile('tmInfo', 'info-circle', TX('Bilgi'), 'ev', !g.past && window.HOL && EVD ? spCount(name) : 0) : '',
     !g.past ? tile('tmSug', 'map-search', TX('Öneriler')) : '',
     ended ? tile('tmCard', 'photo', TX('Kartpostal')) : '',
     tile('tmPdf', 'file-text', TX('PDF')),
@@ -2702,7 +3012,7 @@ function renderTrip(app, anim) {
   const plan = ts.length ? tripDays(name, g, ts) : TX('<p class="snote">Henüz bilet yok.</p>');
   app.innerHTML = TL`<div class="page tripp${animCls(anim)}">
     <div class="tph thero${hasCov ? ' cov' : ''}" style="--kc:${kd ? kd.c : 'var(--acc)'}"${hasCov ? ` data-cov="${esc(name)}"` : ''}>
-      ${art ? `<div class="tart">${art}</div>` : ''}
+      ${art ? `<div class="tart">${art}</div>` : hasCov || window.WORLD ? '' : '<div class="tart skel"></div>'}
       <div class="tpbar"><button class="icon-btn" id="back" aria-label="Geri">←</button><span class="tpbr"><button class="tcovb" id="${ph.length ? 'tpPh' : 'phAdd'}">${I(ph.length ? 'photo' : 'camera-plus')} ${ph.length ? TL`${ph.length}/${PHOTO_MAX} anı` : TL`Kapak ekle · 0/${PHOTO_MAX}`}</button><button class="icon-btn" id="tpMenu" aria-label="Seyahat menüsü">${I('dots')}</button></span></div>
       <div class="thb">${flags ? `<div class="tflag">${flags}</div>` : ''}
       <button class="tkind" id="tpKind" style="--kc:${(kd || { c: 'var(--muted)' }).c}">${kd ? `${I(kd.ic)} ${esc(kd.n)}` : TL`${I('plus')} Tip seç${guessKind(name) ? ` · ${esc(kindOf(guessKind(name)).n)}?` : ''}`}</button>
@@ -2710,6 +3020,7 @@ function renderTrip(app, anim) {
       <div class="tps">${esc(g.a ? (g.e && g.e !== g.a ? fmtRange(g.a, g.e) : fmtDate(g.a)) : TX('Tarihsiz'))} · ${ts.length} bilet</div></div></div>
     <div class="sbody">
       <div class="tgrid">${tiles.join('')}</div>
+      ${(() => { const pk = parkRowHtml(name, true); return pk ? `<div class="vrows pkw">${pk}</div>` : ''; })()}
       ${g.past ? memSec : ''}
       <div class="tsec"><b>Plan</b>${ts.some(t => ticketLocs(t).some(l => hasC(l) || l.address || l.url)) ? TL`<button id="tpRoute">${I('route')} Rota</button>` : ''}</div>
       <div class="tplan">${plan}</div>
@@ -2734,7 +3045,7 @@ function renderTrip(app, anim) {
   on('tmPack', () => openPack(name)); on('tmShop', () => openShop(name)); on('tmExp', () => openExp(name)); on('tmPdf', () => pdfDialog(name)); on('tmVisa', () => tripVisaSheet(name)); on('tmInfo', () => openCInfo(name)); on('tmCard', () => tripPostcard(name)); on('tmSug', () => tripSuggest(name)); on('tmMem', goMem); on('tmLang', () => openPhr(name));
   on('tpRoute', () => tripRoute(name)); on('tpAdd', () => addNew(name)); on('tpQuick', () => quickPlace(name));
   $$('.tplan .card').forEach(c => bindCardPress(c, () => openTicket(c.dataset.id)));
-  bindDays(app); fillDayWx(app);
+  bindDays(app); bindPark(app); fillDayWx(app);
   fillCardWx(app);
 }
 
@@ -2848,7 +3159,10 @@ async function setStatus(ids, st, opt = {}) {
     await saveTicketDB(t, [], []);
   }
   if (!opt.quiet) toast(ts.length > 1 ? TL`${ts.length} bilet: ${st ? ST[st].n.toLocaleLowerCase(LANG) : TX('durum temizlendi')}` : st ? ST[st].n : TX('Durum temizlendi'));
+  if (st && !opt.auto && !opt.quiet) S.stampIn = new Set(ts.map(t => t.id));
   syncReminders(true); render();
+  if (S.stampIn) { const ids2 = S.stampIn; S.stampIn = null; let n = 0;
+    requestAnimationFrame(() => { for (const id of ids2) { const e = document.querySelector(`.card[data-id="${CSS.escape(id)}"] .stamp`); if (e) { e.classList.add('stampin'); n++; } } if (n) setTimeout(tick, 260); }); }
   if (st === 'cancel' && ts.length === 1 && !opt.noRefund) await refundDialog(ts[0]);
 }
 async function statusMenu(t) {
@@ -3372,6 +3686,7 @@ async function tripMenu(name, onPage) {
   const v = await sheetMenu(name, [
     ...(onPage ? [] : [{ icon: I('layout-cards'), label: TX('Seyahat sayfasını aç'), sub: TX('Anılar, bavul, bilgi, plan'), value: 'page' }]),
     { icon: I('route'), label: TX('Seyahatin rotası'), sub: TX('Yerleri sırayla haritada aç'), value: 'route' },
+    { icon: I('car'), label: PARK && PARK[name] ? TX('Otopark yeri') : TX('Otopark yeri ekle'), sub: TX('Kat/sıra fotoğrafı, dönüşte hatırlatma'), value: 'park' },
     ...(ts.length ? [{ icon: I('share'), label: TX('Paylaş'), sub: TX('Şifreli dosya · DoraGo kullanan biriyle'), value: 'share' }] : []),
 
     { icon: I('pencil'), label: TX('Adı ve tarihleri düzenle'), value: 'rename' },
@@ -3389,6 +3704,7 @@ async function tripMenu(name, onPage) {
     await saveTripRecs();
     if (S.tripOpen[name] !== undefined) { S.tripOpen[nn] = S.tripOpen[name]; if (nn !== name) delete S.tripOpen[name]; }
     if (nn !== name) await moveShop(name, nn);
+    if (nn !== name) await movePark(name, nn);
     if (nn !== name) { await getPacks(); if (PACKS[name]) { PACKS[nn] = PACKS[name]; delete PACKS[name]; await savePacks(); } }
     if (nn !== name) { await getExp(); if (EXP[name]) { if (EXP[nn]) { EXP[nn].items.push(...EXP[name].items); EXP[nn].people = [...new Set([...EXP[nn].people, ...EXP[name].people])]; } else EXP[nn] = EXP[name]; delete EXP[name]; await saveExp(); } }
     if (nn !== name) { await getTP(); if (TP[name]) { TP[nn] = TP[nn] ? { cover: TP[nn].cover, items: [...TP[nn].items, ...TP[name].items].slice(0, PHOTO_MAX) } : TP[name]; delete TP[name]; await saveTP(); } }
@@ -3403,6 +3719,7 @@ async function tripMenu(name, onPage) {
   } else if (v === 'select') {
     S.sel = new Set(ts.map(t => t.id)); S.trip = name; S.tab = 'list'; if (S.view === 'trip') { S.retTrip = null; go('home', 'back'); } else render();
   } else if (v === 'route') tripRoute(name);
+  else if (v === 'park') { await getPark(); PARK[name] ? parkSheet(name) : parkDialog(name); }
   else if (v === 'add') addNew(name);
   else if (v === 'share') shareTrip(name);
   else if (v === 'pdf') pdfDialog(name);
@@ -3459,13 +3776,13 @@ function tripCardHtml(g) {
   const n = g.a ? daysLeft(g.a) : null, days = g.a ? nightsBetween(g.a, g.e || g.a) + 1 : 0;
   const tag = [g.past ? '' : n == null ? TX('Tarihsiz') : n > 1 ? TL`${n} gün kaldı` : n === 1 ? TX('Yarın') : TX('Şu an seyahattesin'), kd ? kd.n : ''].filter(Boolean).join(' · ');
   const sub = [g.a ? (g.e && g.e !== g.a ? fmtRange(g.a, g.e) : fmtDate(g.a)) : '', days > 1 ? TL`${days} gün` : '', TL`${g.n} bilet`].filter(Boolean).join(' · ');
-  const top = `<div class="tct${cov ? ' cov' : ''}"${cov ? ` data-cov="${esc(name)}"` : ''}>${art ? `<span class="tart">${art}</span>` : ''}${tag ? `<span class="tctag">${esc(tag)}</span>` : ''}
+  const top = `<div class="tct${cov ? ' cov' : ''}"${cov ? ` data-cov="${esc(name)}"` : ''}>${art ? `<span class="tart">${art}</span>` : cov || window.WORLD ? '' : '<span class="tart skel"></span>'}${tag ? `<span class="tctag">${esc(tag)}</span>` : ''}
     <div class="tcb">${flags ? `<div class="tflag">${flags}</div>` : ''}<b class="tcn">${esc(name)}</b><small>${esc(sub)}</small></div></div>`;
   const ex = expItems(name).length ? expSummary(name) : null;
   if (g.past) {
     const nph = ((TP && TP[name]) || { items: [] }).items.length;
     const line = [nph ? TL`${nph} anı` : '', ex && ex.total ? fmtMoney(ex.total, ex.b) : ''].filter(Boolean).join(' · ');
-    return `<button class="tcard past" data-tn="${esc(name)}" style="--kc:${kc}">${top}${line ? `<div class="tcx">${esc(line)}</div>` : ''}</button>`;
+    return `<button class="tcard past" data-tn="${esc(name)}" style="--kc:${kc}">${top}${line ? '<i class="tperf"></i>' : ''}${line ? `<div class="tcx">${esc(line)}</div>` : ''}</button>`;
   }
   const row = (ic, txt, cls = '') => `<span class="${cls}">${I(ic)}<em>${esc(txt)}</em></span>`;
   const det = [];
@@ -3485,7 +3802,7 @@ function tripCardHtml(g) {
     const what = t0.type === 'ucak' && t0.from && t0.to ? `${t0.from} → ${t0.to}` : (t0.title || typeOf(t0.type).n);
     foot = `<div class="tcx">${I(typeOf(t0.type).ic)}<span>${esc(TX('Sıradaki') + ': ' + when + (t0.time ? ' ' + t0.time : '') + ' · ' + what)}</span></div>`;
   }
-  return `<button class="tcard" data-tn="${esc(name)}" style="--kc:${kc}">${top}${det.length ? `<div class="tcg">${det.join('')}</div>` : ''}${foot}</button>`;
+  return `<button class="tcard" data-tn="${esc(name)}" style="--kc:${kc}">${top}<i class="tperf"></i>${det.length ? `<div class="tcg">${det.join('')}</div>` : ''}${foot}</button>`;
 }
 let TRIPS_READY = 0, PRELOAD = null;
 function preload() { if (!PRELOAD) { const p = tripsData(); TRIPS_READY = 1; PRELOAD = p.catch(() => {}).then(() => { TRIPS_READY = 2; }); } return PRELOAD; }
@@ -3503,6 +3820,7 @@ function renderTrips(app, anim) {
   if (!all.length) body = TL`<div class="empty"><div class="big">${dot('map-2', 'var(--acc)', 'xl')}</div><h3>Henüz seyahat yok</h3>
       <p>Biletlerini bir seyahatte topla; bavul, masraf ve vize tek sayfada.</p>
       <div class="ebtns"><button class="btn pri" id="tlNew">${I('plus')} Yeni seyahat</button><button class="btn" id="tlWorld">${I('world')} Haritadan</button></div></div>`;
+  if (!all.length && TRIPS_READY !== 2) body = '<div class="skc" aria-hidden="true"><i class="skel"></i><b class="skel"></b><s class="skel"></s></div>'.repeat(2);
   if (!TRIPS_READY) { TRIPS_READY = 1; tripsData().then(() => { TRIPS_READY = 2; if (S.view === 'home' && S.tab === 'trips') quietRender(); }); }
   const hero = (THEMES[curTheme()].hero && S.tickets.length ? heroHtml() : '') + statusBars();
   app.innerHTML = TL`<div class="page${animCls(anim)}">
@@ -3515,6 +3833,33 @@ function renderTrips(app, anim) {
   const nwW = $('#tlWorld'); if (nwW) nwW.onclick = () => openWorld();
   $$('[data-tn]').forEach(b => b.onclick = () => openTrip(b.dataset.tn));
   fillCovers(app); fillDayWx(app); fitTop();
+}
+/* 5.26: ay / yıl seçici */
+function monthPicker(app) {
+  const today = todayStr(), cnt = {};
+  for (const t of S.tickets) if (t.date) cnt[t.date.slice(0, 7)] = (cnt[t.date.slice(0, 7)] || 0) + 1;
+  let [y, m] = S.calMonth.split('-').map(Number), yView = y, mode = 'm';
+  const yrs = () => { const set = new Set(Object.keys(cnt).map(k => +k.slice(0, 4))); const c = +today.slice(0, 4); for (let k = c - 3; k <= c + 3; k++) set.add(k); set.add(y); return [...set].sort((a, b) => a - b); };
+  const ov = document.createElement('div'); ov.className = 'ov';
+  const draw = () => {
+    const body = mode === 'y'
+      ? `<div class="mpg yg">${yrs().map(k => { const n = Object.entries(cnt).filter(([kk]) => kk.startsWith(k + '-')).reduce((a, [, v]) => a + v, 0); return `<button class="mpm${k === yView ? ' sel' : ''}${k === +today.slice(0, 4) ? ' cur' : ''}${n ? ' has' : ''}" data-y="${k}">${k}<small>${n ? TL`${n} bilet` : '—'}</small></button>`; }).join('')}</div>`
+      : `<div class="mpg">${MONTH_TR.map((mn, i) => { const k = `${yView}-${pad(i + 1)}`, n = cnt[k] || 0; return `<button class="mpm${yView === y && i + 1 === m ? ' sel' : ''}${k === today.slice(0, 7) ? ' cur' : ''}${n ? ' has' : ''}" data-m="${i + 1}">${esc(mn.slice(0, 3))}<small>${n ? TL`${n} bilet` : '—'}</small></button>`; }).join('')}</div>`;
+    ov.innerHTML = TL`<div class="dlg sheet mpk-s"><div class="mpy"><button class="ar" data-dy="-1" aria-label="Önceki yıl">${I('chevron-left')}</button><button class="mpyb" data-ym="1">${yView} ${I('chevron-down')}</button><button class="ar" data-dy="1" aria-label="Sonraki yıl">${I('chevron-right')}</button></div>${body}
+      <div class="row2"><button class="btn" data-mx="today">Bugün</button><button class="btn pri" data-mx="ok">Seç</button></div></div>`;
+  };
+  const go2 = (yy, mm) => { const k = `${yy}-${pad(mm)}`, dir = k > S.calMonth ? 'slide-l' : k < S.calMonth ? 'slide-r' : null; S.calMonth = k; S.calDay = k === today.slice(0, 7) ? today : k + '-01'; close(); renderCal(app, dir); };
+  const close = () => { ov.remove(); dlgClose = null; };
+  ov.addEventListener('click', e => {
+    const dy = e.target.closest('[data-dy]'), ym = e.target.closest('[data-ym]'), yy = e.target.closest('[data-y]'), mm = e.target.closest('[data-m]'), mx = e.target.closest('[data-mx]');
+    if (dy) { yView += +dy.dataset.dy; draw(); }
+    else if (ym) { mode = mode === 'y' ? 'm' : 'y'; draw(); }
+    else if (yy) { yView = +yy.dataset.y; mode = 'm'; draw(); }
+    else if (mm) { m = +mm.dataset.m; y = yView; draw(); }
+    else if (mx) { if (mx.dataset.mx === 'today') go2(+today.slice(0, 4), +today.slice(5, 7)); else go2(y, m); }
+    else if (e.target === ov) close();
+  });
+  draw(); document.body.appendChild(ov); dlgClose = close; tick();
 }
 function renderCal(app, anim) {
   const today = todayStr();
@@ -3536,6 +3881,7 @@ function renderCal(app, anim) {
       }
     }
   }
+  const trSpan = allTrips().filter(g => g.a && g.e).sort((x, z) => x.a < z.a ? -1 : 1);
   const usedTypes = new Set();
   let grid = '';
   for (let i = 0; i < cells; i++) {
@@ -3543,8 +3889,11 @@ function renderCal(app, anim) {
     const ts = byDay[key] || [];
     if (!other) ts.forEach(t => usedTypes.add(t.type));
     const dots = ts.filter(t => t.type !== 'konaklama' || !t.endDate).slice(0, 3).map(t => `<b style="background:${TCOL[t.type] || TCOL.diger}"></b>`).join('');
-    const st = stay[key] ? stay[key][0] : null;
-    const dow = i % 7, band = st ? `<s class="band ${st.pos}${dow === 0 ? ' rs' : ''}${dow === 6 ? ' re' : ''}"></s>` : '';
+    const st = stay[key] ? stay[key][0] : null, tr = trSpan.find(g => g.a <= key && key <= g.e);
+    const dow = i % 7;
+    /* 5.26: seyahat günleri washi bant (seyahat yoksa eski konaklama bandı) */
+    const band = tr ? `<s class="wash${key === tr.a ? ' s' : ''}${key === tr.e ? ' e' : ''}${dow === 0 ? ' rs' : ''}${dow === 6 ? ' re' : ''}" style="--wc:${(kindOf(tripKind(tr.name)) || {}).c || 'var(--acc)'}"></s>${!other && (key === tr.a || (key.endsWith('-01') && tr.a < key)) ? `<em class="wl">${esc(tr.name)}</em>` : ''}`
+      : st ? `<s class="band ${st.pos}${dow === 0 ? ' rs' : ''}${dow === 6 ? ' re' : ''}"></s>` : '';
     const cls = [other ? 'o' : '', key === today ? 'td' : '', key === S.calDay ? 'sel' : ''].join(' ');
     grid += `<button class="${cls}" data-d="${key}" aria-label="${d.getDate()} ${MONTH_TR[d.getMonth()]}${ts.length ? ', ' + ts.length + TX(' bilet') : ''}">${band}<span class="dn">${d.getDate()}</span><i>${dots}</i></button>`;
   }
@@ -3566,9 +3915,9 @@ function renderCal(app, anim) {
   const isCur = S.calMonth === today.slice(0, 7);
   app.innerHTML = TL`<div class="page${animCls(anim === 'slide-l' || anim === 'slide-r' ? null : anim)}">
     <div class="top">${header(TX('Takvim'))}</div>
-    <div class="mh"><button class="ar" id="prevM" aria-label="Önceki ay">‹</button><b>${MONTH_TR[m - 1]} ${y}</b>
-      ${isCur ? '' : TX('<button class="today-btn" id="todayB">Bugün</button>')}<button class="ar" id="nextM" aria-label="Sonraki ay">›</button></div>
-    <div class="cal"><div class="${anim === 'slide-l' || anim === 'slide-r' ? anim : ''}">
+    <div class="mh"><button class="ar" id="prevM" aria-label="Önceki ay">${I('chevron-left')}</button><b><button class="mpk" id="mPick">${MONTH_TR[m - 1]} ${y} ${I('chevron-down')}</button></b>
+      ${isCur ? '' : TX('<button class="today-btn" id="todayB">Bugün</button>')}<button class="ar" id="nextM" aria-label="Sonraki ay">${I('chevron-right')}</button></div>
+    <div class="cal"><i class="rings" aria-hidden="true">${'<b></b>'.repeat(7)}</i><div class="${anim === 'slide-l' || anim === 'slide-r' ? anim : ''}">
       <div class="wd"><div>Pzt</div><div>Sal</div><div>Çar</div><div>Per</div><div>Cum</div><div>Cmt</div><div>Paz</div></div>
       <div class="gr">${grid}</div></div>
       ${legend ? `<div class="leg">${legend}</div>` : `<div class="leg">${monthCount ? '' : TX('Bu ay bilet yok')}</div>`}</div>
@@ -3585,6 +3934,7 @@ function renderCal(app, anim) {
   };
   $('#prevM').onclick = () => shift(-1);
   $('#nextM').onclick = () => shift(1);
+  const mp = $('#mPick'); if (mp) mp.onclick = () => monthPicker(app);
   const tb = $('#todayB'); if (tb) tb.onclick = () => { const dir = S.calMonth < today.slice(0, 7) ? 'slide-l' : 'slide-r'; S.calDay = today; S.calMonth = today.slice(0, 7); renderCal(app, dir); };
   const gn = $('#goNext'); if (gn) gn.onclick = () => {
     const next = S.tickets.filter(t => t.date && t.date > S.calDay).sort((a, b) => a.date < b.date ? -1 : 1)[0];
@@ -3645,6 +3995,7 @@ function renderViewer(app, anim) {
     TL`<button class="tic" id="share"><span class="tib">${I('share-2')}</span><small>Paylaş</small></button>`,
   ].filter(Boolean);
   const rows = locs.map((l, i) => TL`<div class="vrow" data-lmap="${i}"><span class="vri">${l.icon}</span><span class="vrt"><small>${esc(l.label)}</small><b>${esc(l.name)}</b>${l.address && l.address !== l.name ? `<span>${esc(l.address)}</span>` : ''}${l.hint ? `<span class="loc-hint">${esc(l.hint)}</span>` : ''}</span><button class="vrb" data-lshow="${i}" aria-label="Haritada göster">${I('map')}</button><button class="vrb" data-lcopy="${i}" aria-label="Adresi kopyala">${I('copy')}</button></div>`).join('')
+    + (t.trip && isTrans(t) ? (() => { const lg = tripLegs(t.trip); return lg.out === t ? parkRowHtml(t.trip, true) : lg.ret === t ? parkRowHtml(t.trip, false) : ''; })() : '')
     + (t.date ? (() => { const st = t.status && ST[t.status], ended = hasEnded(t); return TL`<div class="vrow vst" id="vst"><span class="vri ${st ? 's-' + t.status : ''}">${I(st ? ST[t.status].ic : ended ? 'help' : 'calendar-event')}</span><span class="vrt"><small>Durum</small><b>${st ? ST[t.status].n + (t.statusAuto ? TX(' (varsayıldı)') : '') : ended ? TX('Gittin mi?') : TX('Planlandı')}</b><span>${ended || st ? TX('Değiştirmek için dokun') : TX('İptal ya da ertelendiyse dokun')}</span></span></div>`; })() : '')
     + (t.status === 'cancel' && t.refund ? TL`<div class="vrow vrf"><span class="vri">${I('receipt-refund')}</span><span class="vrt"><small>İade</small><b>${t.refund.state === 'wait' ? TX('Bekleniyor') : TX('Alındı')}${t.refund.amt ? ` · ${esc(t.refund.amt)} ${curSym(t.refund.cur)}` : ''}</b><span>${t.refund.state === 'wait' ? esc(refundTxt({ ...t.refund, amt: '' })) + ' · son ' + esc(fmtDate(t.refund.due)) : esc(fmtDate(t.refund.got || t.refund.due))}</span></span>${t.refund.state === 'wait' ? TL`<button class="btn rfgot" id="rfgot">Alındı</button>` : ''}</div>` : '')
     + (t.notes ? TL`<div class="vrow nt"><span class="vri">${I('pencil')}</span><span class="vrt"><small>Not</small><span class="vnote">${esc(t.notes).replace(/\n/g, '<br>')}</span></span></div>` : '')
@@ -3684,7 +4035,7 @@ function renderViewer(app, anim) {
   const rg = $('#rfgot'); if (rg) rg.onclick = e => { e.stopPropagation(); refundDone(t); };
   $$('[data-lshow]', app).forEach(b => b.onclick = e => { e.stopPropagation(); showOnMap(locs[+b.dataset.lshow]); });
   $$('[data-lcopy]', app).forEach(b => b.onclick = e => { e.stopPropagation(); const l = locs[+b.dataset.lcopy]; copyText([l.name, l.address].filter(Boolean).join(', ') + (l.url ? `\n${l.url}` : hasC(l) ? `\n${l.lat}, ${l.lon}` : '')); });
-  fillWxViewer(t);
+  bindPark(app); fillWxViewer(t);
 }
 
 function addToCalendar(t) {
@@ -3771,9 +4122,9 @@ function setupZoom(vp) {
 }
 
 /* ---------- ekle / düzenle ---------- */
-function pickFiles(accept, multiple = true) {
+function pickFiles(accept, multiple = true, capture = false) {
   return new Promise(res => {
-    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = accept; inp.multiple = multiple;
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = accept; inp.multiple = multiple; if (capture) inp.setAttribute('capture', 'environment');
     inp.style.display = 'none'; document.body.appendChild(inp);
     let fin = false; const end = v => { if (fin) return; fin = true; inp.remove(); res(v); };
     inp.onchange = () => end(Array.from(inp.files || []));
@@ -3912,8 +4263,187 @@ function cleanName(n) {
 }
 
 const DRAFT_FIELDS = ['priceAmt', 'priceCur', 'title', 'type', 'date', 'time', 'endDate', 'endTime', 'from', 'to', 'airline', 'airlineName', 'flightNo', 'seat', 'gate', 'ref', 'place', 'trip', 'notes', 'checkinH', 'lat', 'lon', 'leg', 'mapUrl'];
+/* ================= 5.26: Apple Wallet .pkpass içe aktarma =================
+   zip (merkezi dizin + DecompressionStream) → pass.json (+ xx.lproj/pass.strings) → bilet taslağı + barkodlu bilet sayfası (PNG) */
+let BCENC_P = null;
+function loadBcenc() {
+  if (window.BCENC) return Promise.resolve(window.BCENC);
+  if (!BCENC_P) BCENC_P = new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'bcenc.js'; s.onload = () => res(window.BCENC); s.onerror = e => { BCENC_P = null; rej(e); }; document.head.appendChild(s); });
+  return BCENC_P;
+}
+async function isZipFile(f) { const b = new Uint8Array(await f.slice(0, 4).arrayBuffer()); return b[0] === 0x50 && b[1] === 0x4b && b[2] === 3 && b[3] === 4; }
+function unzip(buf) {
+  const u = buf instanceof Uint8Array ? buf : new Uint8Array(buf), dv = new DataView(u.buffer, u.byteOffset, u.byteLength), ent = new Map();
+  let e = u.length - 22; while (e >= 0 && dv.getUint32(e, true) !== 0x06054b50) e--;
+  if (e < 0) throw new Error('zip');
+  let n = dv.getUint16(e + 10, true), p = dv.getUint32(e + 16, true);
+  for (let i = 0; i < n && p + 46 <= u.length; i++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    const meth = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), lo = dv.getUint32(p + 42, true);
+    const name = TD.decode(u.subarray(p + 46, p + 46 + nl)); p += 46 + nl + xl + cl;
+    const ds = lo + 30 + dv.getUint16(lo + 26, true) + dv.getUint16(lo + 28, true);
+    ent.set(name, { meth, raw: u.subarray(ds, ds + csize) });
+  }
+  return {
+    names: [...ent.keys()],
+    async get(name) {
+      const x = ent.get(name); if (!x) return null; if (x.meth === 0) return x.raw; if (x.meth !== 8) return null;
+      return new Uint8Array(await new Response(new Blob([x.raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+    },
+  };
+}
+const decTxt = b => b[0] === 0xff && b[1] === 0xfe ? new TextDecoder('utf-16le').decode(b.subarray(2)) : b[0] === 0xfe && b[1] === 0xff ? new TextDecoder('utf-16be').decode(b.subarray(2)) : TD.decode(b).replace(/^﻿/, '');
+const pkCol = (s, d) => { const m = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(s || ''); return m ? `rgb(${m[1]},${m[2]},${m[3]})` : /^#[0-9a-f]{3,8}$/i.test(s || '') ? s : d; };
+/* ISO zaman → o yerin yerel tarihi/saati (ofsetli değer kendi yerel saatini taşır; Z ise saat dilimine çevrilir) */
+function pkLocal(v, tz) {
+  const m = /^(\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2}))?(.*)$/.exec(String(v || '').trim()); if (!m) return null;
+  if (!m[2]) return { date: m[1], time: '' };
+  if (!/^(:\d{2}(\.\d+)?)?Z$/i.test(m[3])) return { date: m[1], time: m[2] };
+  const d = new Date(v); if (isNaN(d)) return { date: m[1], time: m[2] };
+  try { const f = new Intl.DateTimeFormat('en-CA', { timeZone: tz || undefined, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(d), g = k => f.find(x => x.type === k).value; return { date: `${g('year')}-${g('month')}-${g('day')}`, time: `${g('hour')}:${g('minute')}` }; } catch (e) { return { date: m[1], time: m[2] }; }
+}
+async function readPkpass(file) {
+  const z = unzip(new Uint8Array(await file.arrayBuffer())), pj = await z.get('pass.json'); if (!pj) throw new Error(TX('pass.json yok'));
+  const P = JSON.parse(decTxt(pj));
+  const lp = [LANG, 'en', 'tr'].map(l => z.names.find(n => n.toLowerCase().startsWith(l + '.lproj/') || n.toLowerCase().startsWith(l + '-') && n.endsWith('.lproj/pass.strings'))).find(Boolean) || z.names.find(n => /\.lproj\/pass\.strings$/.test(n));
+  const STR = {};
+  if (lp) { const sb = await z.get(lp.endsWith('pass.strings') ? lp : lp.replace(/[^/]*$/, 'pass.strings')); if (sb) for (const m of decTxt(sb).matchAll(/"((?:[^"\\]|\\.)*)"\s*=\s*"((?:[^"\\]|\\.)*)"\s*;/g)) STR[m[1]] = m[2].replace(/\\n/g, '\n').replace(/\\"/g, '"'); }
+  const L = v => typeof v === 'string' && STR[v] != null ? STR[v] : v;
+  const kind = ['boardingPass', 'eventTicket', 'coupon', 'storeCard', 'generic'].find(k => P[k]) || 'generic', st = P[kind] || {};
+  const F = ['headerFields', 'primaryFields', 'secondaryFields', 'auxiliaryFields', 'backFields'].flatMap(s => (st[s] || []).map(f => ({ ...f, sec: s, label: String(L(f.label) || ''), value: typeof f.value === 'string' ? L(f.value) : f.value })));
+  const imgs = {};
+  for (const k of ['logo', 'strip', 'thumbnail', 'background', 'icon']) { const nm = [`${k}@3x.png`, `${k}@2x.png`, `${k}.png`].find(n => z.names.includes(n)); if (nm) { const b = await z.get(nm); if (b) imgs[k] = new Blob([b], { type: 'image/png' }); } }
+  const bc = (P.barcodes && P.barcodes[0]) || P.barcode || null;
+  return { P, kind, st, F, imgs, bc: bc && bc.message ? { fmt: String(bc.format || ''), msg: String(bc.message), alt: L(bc.altText) || '', enc: bc.messageEncoding || 'iso-8859-1' } : null, L };
+}
+/* pass.json → bilet alanları */
+function pkInfo(pk) {
+  const { P, kind, st, F } = pk, sem = P.semantics || {}, used = new Set(), out = {}, filled = [];
+  const find = re => { const f = F.find(x => !used.has(x) && (re.test(x.key || '') || re.test(x.label || ''))); if (f) used.add(f); return f; };
+  const set = (k, v) => { if (v == null || v === '' || out[k]) return; out[k] = String(v).trim(); filled.push(k); };
+  const tt = st.transitType || '';
+  out.type = kind === 'boardingPass' ? (tt === 'PKTransitTypeAir' ? 'ucak' : 'ulasim') : kind === 'eventTicket' ? 'etkinlik' : 'diger'; filled.push('type');
+  const prim = F.filter(f => f.sec === 'primaryFields');
+  if (out.type === 'ucak') {
+    set('from', sem.departureAirportCode || (prim[0] && /^[A-Z]{3}$/.test(prim[0].value) ? prim[0].value : ''));
+    set('to', sem.destinationAirportCode || (prim[1] && /^[A-Z]{3}$/.test(prim[1].value) ? prim[1].value : ''));
+    prim.slice(0, 2).forEach(f => used.add(f));
+    const fn = sem.flightCode || (sem.airlineCode && sem.flightNumber ? sem.airlineCode + sem.flightNumber : '') || ((find(/flight|uçuş|ucus|flug|vol\b|vuelo|volo/i) || {}).value || '');
+    set('flightNo', String(fn).replace(/\s+/g, '').toUpperCase());
+    set('airline', sem.airlineCode || alFind(P.organizationName || '') || (out.flightNo || '').slice(0, 2));
+    if (out.airline && alName(out.airline)) set('airlineName', alName(out.airline));
+    set('title', out.flightNo);
+  } else if (out.type === 'ulasim') {
+    set('title', [prim[0] && prim[0].value, prim[1] && prim[1].value].filter(Boolean).join(' → ') || P.description);
+    prim.slice(0, 2).forEach(f => used.add(f));
+  } else {
+    set('title', kind === 'eventTicket' ? sem.eventName || (prim[0] && prim[0].value) || P.description || P.logoText || P.organizationName
+      : [P.logoText || P.organizationName, prim[0] && prim[0].value].filter(Boolean).join(' · ') || P.description); if (prim[0]) used.add(prim[0]);
+  }
+  set('seat', (sem.seats && sem.seats[0] && [sem.seats[0].seatSection, sem.seats[0].seatRow, sem.seats[0].seatNumber].filter(Boolean).join(' · ')) || (find(/seat|koltuk|sitz|siège|asiento|posto/i) || {}).value);
+  set('gate', (find(/gate|kapı|kapi|porte|puerta|flugsteig/i) || {}).value);
+  set('ref', sem.confirmationNumber || (find(/pnr|confirm|booking|record|locator|reference|rezerv|buchung|ticket ?(no|number)|order/i) || {}).value);
+  /* tarih/saat: semantik → kalkış/başlangıç alanı → relevantDate */
+  const ap = out.from && apRec(out.from), tz = ap && window.CINFO && CINFO[ap.cc] && CINFO[ap.cc].tz;
+  const df = F.find(f => /depart|kalkış|kalkis|abflug|départ|start|begin|event|date|tarih|datum|time|saat/i.test((f.key || '') + ' ' + f.label) && pkLocal(f.value));
+  const when = pkLocal(sem.currentDepartureDate || sem.originalDepartureDate || sem.eventStartDate, tz) || (df && pkLocal(df.value, tz)) || pkLocal(P.relevantDate, tz)
+    || (P.relevantDates && P.relevantDates[0] && pkLocal(P.relevantDates[0].startDate || P.relevantDates[0].date, tz));
+  if (df) used.add(df);
+  if (when) { set('date', when.date); if (when.time) set('time', when.time); }
+  const loc = sem.venueLocation || (P.locations && P.locations[0]);
+  if (out.type !== 'ucak') { set('place', sem.venueName || (find(/venue|location|place|mekan|yer\b|salon|stadium|ort\b|lieu/i) || {}).value); if (loc && loc.latitude != null) { out.lat = +loc.latitude; out.lon = +loc.longitude; filled.push('lat'); } }
+  const pas = find(/passenger|yolcu|name|ad soyad|fahrgast|passager/i);
+  const notes = [pas ? `${pas.label || TX('Yolcu')}: ${pas.value}` : '', ...F.filter(f => !used.has(f) && f.sec !== 'backFields' && f.value != null && String(f.value).length <= 60 && !pkLocal(f.value)).map(f => `${f.label ? f.label + ': ' : ''}${f.value}`)].filter(Boolean);
+  if (notes.length) { out.notes = [...new Set(notes)].join('\n').slice(0, 400); filled.push('notes'); }
+  out.filled = filled;
+  return out;
+}
+/* barkod matrisi: { w, h, bit(x,y), rh } */
+async function pkMatrix(bc) {
+  const f = bc.fmt.replace('PKBarcodeFormat', '').toLowerCase(), latin = /8859|latin/i.test(bc.enc);
+  const bytes = latin && [...bc.msg].every(c => c.charCodeAt(0) < 256) ? Uint8Array.from([...bc.msg].map(c => c.charCodeAt(0))) : TE.encode(bc.msg);
+  if (f === 'pdf417' || f === 'code128') { const E = await loadBcenc(); if (f === 'pdf417') return { ...E.pdf417(bytes), rh: 1 }; const m = E.code128(bc.msg); return { ...m, h: 1, rh: 0 }; }
+  const Z = await loadZXing(), hints = new Map(); hints.set(Z.EncodeHintType.CHARACTER_SET, latin ? 'ISO-8859-1' : 'UTF-8');
+  const bm = f === 'aztec' ? new Z.AztecCodeWriter().encode(bc.msg, Z.BarcodeFormat.AZTEC, 0, 0, hints) : new Z.QRCodeWriter().encode(bc.msg, Z.BarcodeFormat.QR_CODE, 0, 0, hints);
+  const pad = f === 'aztec' ? 2 : 0;
+  return { w: bm.getWidth() + 2 * pad, h: bm.getHeight() + 2 * pad, bit: (x, y) => { x -= pad; y -= pad; return x >= 0 && y >= 0 && x < bm.getWidth() && y < bm.getHeight() && bm.get(x, y); }, rh: 1 };
+}
+/* biniş kartı benzeri sayfa: renkler, logo, alanlar, büyük barkod */
+async function pkRender(pk, info) {
+  const { P, F, imgs, bc } = pk, W = 1080, cv = document.createElement('canvas'); cv.width = W; cv.height = 2400;
+  const x = cv.getContext('2d'), bg = pkCol(P.backgroundColor, '#1F2937'), fg = pkCol(P.foregroundColor, '#FFFFFF'), lc = pkCol(P.labelColor, fg), FF = "system-ui,-apple-system,'Segoe UI',Roboto,sans-serif";
+  x.fillStyle = bg; x.fillRect(0, 0, W, cv.height);
+  const img = async b => { try { return await createImageBitmap(b); } catch (e) { return null; } };
+  const fit = (t, size, w, weight = 600) => { let s = size; do { x.font = `${weight} ${s}px ${FF}`; s -= 2; } while (x.measureText(t).width > w && s > 14); return t; };
+  let y = 56;
+  const logo = imgs.logo && await img(imgs.logo);
+  if (logo) { const h = 96, w = Math.min(420, logo.width * h / logo.height); x.drawImage(logo, 56, y, w, h); }
+  const lt = P.logoText ? L2(pk, P.logoText) : '';
+  if (lt) { x.fillStyle = fg; fit(lt, 46, 520, 700); x.textBaseline = 'middle'; x.fillText(lt, logo ? 56 + Math.min(420, logo.width * 96 / logo.height) + 24 : 56, y + 48); }
+  const hf = F.filter(f => f.sec === 'headerFields').slice(0, 2);
+  let hx = W - 56; x.textAlign = 'right';
+  for (const f of hf.reverse()) { x.textBaseline = 'alphabetic'; x.fillStyle = lc; x.font = `600 24px ${FF}`; x.fillText(String(f.label || '').toUpperCase(), hx, y + 34); x.fillStyle = fg; x.font = `600 40px ${FF}`; x.fillText(String(f.value ?? ''), hx, y + 84); hx -= 260; }
+  x.textAlign = 'left'; y += 150;
+  const strip = imgs.strip && await img(imgs.strip);
+  const prim = F.filter(f => f.sec === 'primaryFields');
+  if (strip) { const h = Math.round(W * strip.height / strip.width); x.drawImage(strip, 0, y, W, h); if (prim[0]) { x.fillStyle = fg; x.font = `700 72px ${FF}`; x.textBaseline = 'bottom'; x.fillText(fit(String(prim[0].value ?? ''), 72, W - 112, 700), 56, y + h - 28); } y += h + 40; }
+  else if (pk.kind === 'boardingPass' && prim.length >= 2) {
+    x.textBaseline = 'alphabetic';
+    for (const [i, f] of prim.slice(0, 2).entries()) { x.textAlign = i ? 'right' : 'left'; const px = i ? W - 56 : 56; x.fillStyle = lc; x.font = `600 26px ${FF}`; x.fillText(String(f.label || '').toUpperCase(), px, y + 26); x.fillStyle = fg; fit(String(f.value ?? ''), 128, W / 2 - 110, 300); x.fillText(String(f.value ?? ''), px, y + 150); }
+    x.textAlign = 'center'; x.fillStyle = fg; x.font = `400 64px ${FF}`; x.fillText(pk.st.transitType === 'PKTransitTypeAir' ? '✈' : '→', W / 2, y + 128); x.textAlign = 'left'; y += 200;
+  } else if (prim[0]) { x.fillStyle = lc; x.font = `600 26px ${FF}`; x.textBaseline = 'alphabetic'; x.fillText(String(prim[0].label || '').toUpperCase(), 56, y + 26); x.fillStyle = fg; fit(String(prim[0].value ?? ''), 80, W - 112, 600); x.fillText(String(prim[0].value ?? ''), 56, y + 112); y += 150; }
+  const rows = ['secondaryFields', 'auxiliaryFields'].map(s => F.filter(f => f.sec === s && f.value != null && f.value !== '').slice(0, 4)).filter(r => r.length);
+  for (const r of rows) {
+    const cw = (W - 112) / r.length; x.textBaseline = 'alphabetic';
+    r.forEach((f, i) => { const px = 56 + i * cw, al = r.length > 1 && i === r.length - 1 ? 'right' : 'left', ax = al === 'right' ? W - 56 : px; x.textAlign = al;
+      const lv = pkLocal(f.value), ds = f.dateStyle && f.dateStyle !== 'PKDateStyleNone', ts = f.timeStyle && f.timeStyle !== 'PKDateStyleNone';
+      const v = lv ? [ds || !ts ? new Date(lv.date + 'T12:00').toLocaleDateString(LOC, { day: 'numeric', month: 'short' }) : '', ts || !ds ? lv.time : ''].filter(Boolean).join(' ') : String(f.value);
+      x.fillStyle = lc; x.font = `600 24px ${FF}`; x.fillText(fit(String(f.label || '').toUpperCase(), 24, cw - 12), ax, y + 24); x.fillStyle = fg; x.fillText(fit(v, 40, cw - 12), ax, y + 76); });
+    x.textAlign = 'left'; y += 120;
+  }
+  const th = !strip && imgs.thumbnail && await img(imgs.thumbnail);
+  if (th) { const h = 180, w = th.width * h / th.height; x.drawImage(th, W - 56 - w, y - 10 - (rows.length ? 0 : 0), w, h); y += th ? 40 : 0; }
+  y += 30;
+  if (bc) {
+    let m = null; try { m = await pkMatrix(bc); } catch (e) { console.warn('barkod', e); }
+    const box = W - 160, sq = m && m.rh && m.h > 1 && m.w / m.h < 1.6;
+    if (m) {
+      const sc = Math.max(1, Math.floor((sq ? 560 : box - 60) / m.w)), mh = m.rh ? m.h * sc * (m.h > 1 && !sq ? 1 : 1) : 220, bw = m.w * sc, bh = m.rh ? m.h * sc : 220;
+      const pw = bw + 60, ph = bh + 60 + (bc.alt ? 60 : 0), px = (W - pw) / 2;
+      x.fillStyle = '#fff'; x.beginPath(); x.roundRect ? x.roundRect(px, y, pw, ph, 18) : x.rect(px, y, pw, ph); x.fill();
+      x.fillStyle = '#000';
+      if (m.rh) { for (let yy = 0; yy < m.h; yy++) { let run = -1; for (let xx = 0; xx <= m.w; xx++) { const on = xx < m.w && m.bit(xx, yy); if (on && run < 0) run = xx; else if (!on && run >= 0) { x.fillRect(px + 30 + run * sc, y + 30 + yy * sc, (xx - run) * sc, sc); run = -1; } } } }
+      else { let run = -1; for (let xx = 0; xx <= m.w; xx++) { const on = xx < m.w && m.bit(xx, 0); if (on && run < 0) run = xx; else if (!on && run >= 0) { x.fillRect(px + 30 + run * sc, y + 30, (xx - run) * sc, bh); run = -1; } } }
+      if (bc.alt) { x.fillStyle = '#111'; x.textAlign = 'center'; x.textBaseline = 'alphabetic'; x.fillText(fit(bc.alt, 30, pw - 40, 500), W / 2, y + bh + 30 + 46); x.textAlign = 'left'; }
+      y += ph + 40; void mh;
+    } else { x.fillStyle = fg; x.font = `500 28px ${FF}`; x.fillText(fit(bc.msg, 28, W - 112, 500), 56, y + 30); y += 70; }
+  }
+  x.fillStyle = lc; x.font = `500 22px ${FF}`; x.textBaseline = 'alphabetic'; x.globalAlpha = .7; x.fillText(TX('Apple Wallet kartından · DoraGo'), 56, y + 10); x.globalAlpha = 1; y += 44;
+  const H = Math.max(900, Math.ceil(y)), out = document.createElement('canvas'); out.width = W; out.height = H; out.getContext('2d').drawImage(cv, 0, 0);
+  const blob = await new Promise(r => out.toBlob(r, 'image/png'));
+  return { blob, w: W, h: H };
+}
+const L2 = (pk, v) => pk.L ? pk.L(v) : v;
+/* dosyadan taslak bilgisi: { pages, info } */
+async function pkpassDraft(file) {
+  await loadTravel(); await loadCInfo().catch(() => {});
+  const pk = await readPkpass(file), info = pkInfo(pk);
+  if (pk.bc && info.type === 'ucak') { try { const b = await extractInfo('', [pk.bc.msg], file.name, []); for (const k of ['from', 'to', 'flightNo', 'date', 'seat', 'ref', 'airline', 'airlineName']) if (b[k] && !info[k]) { info[k] = b[k]; info.filled.push(k); } } catch (e) {} }
+  const page = await pkRender(pk, info);
+  return { pages: [page], info, bc: pk.bc };
+}
+
 async function startImport(files) {
   if (!files.length) return;
+  /* 5.26: .pkpass */
+  const pkf = []; for (const f of files) if (/\.pkpass$/i.test(f.name || '') || f.type === 'application/vnd.apple.pkpass' || await isZipFile(f)) pkf.push(f);
+  if (pkf.length) {
+    if (pkf.length > 1 || files.length > 1) toast(TX('Şimdilik yalnız ilk Wallet kartı eklendi'), 3000);
+    busy(TX('Wallet kartı okunuyor…')); let r = null;
+    try { r = await pkpassDraft(pkf[0]); } catch (e) { console.warn('pkpass', e); } finally { busy(false); }
+    if (!r) { toast(TX('Bu dosya okunamadı (.pkpass değil ya da bozuk)'), 3500); return; }
+    return startDraft(r.pages, r.info, pkf[0]);
+  }
   const { pages, text, links, ltext } = await filesToPages(files);
   if (!pages.length) return;
   busy(TX('Bilet bilgileri okunuyor…'));
@@ -3936,12 +4466,15 @@ async function startImport(files) {
     }
   }
   busy(false);
+  return startDraft(pages, info, files[0]);
+}
+async function startDraft(pages, info, file0, extra = {}) {
   const forced = S.addTrip || ''; S.addTrip = '';
   const d = { id: null, trip: forced || S.trip || '', notes: '', checkinH: 24, pages: pages.map(p => ({ id: uid(), ...p, isNew: true })), removed: [] };
   for (const k of DRAFT_FIELDS) if (d[k] === undefined) d[k] = '';
   const segs = info.segments; delete info.segments;
   Object.assign(d, info, { auto: new Set(info.filled) });
-  if (!d.title) d.title = cleanName(files[0].name);
+  if (!d.title) d.title = cleanName(file0.name);
   delete d.filled;
   if (!d.trip && d.date) { const tr = matchTrip(d.date, d.endDate); if (tr) { d.trip = tr; d.auto.add('trip'); } }
   if (segs && segs.length > 1) { startMulti(segs, d); return; }
@@ -4188,7 +4721,7 @@ async function addNew(trip = '') {
   if (v === 'recv') return receiveTripFile();
   if (v === 'place') return newPlace({ trip });
   if (v !== 'ticket') return;
-  S.addTrip = trip; const f = await pickFiles('image/*,application/pdf'); if (!f.length) S.addTrip = ''; startImport(f);
+  S.addTrip = trip; const f = await pickFiles('image/*,application/pdf,.pkpass,application/vnd.apple.pkpass'); if (!f.length) S.addTrip = ''; startImport(f);
 }
 /* öneriler: Google Haritalar'da otelin çevresinde arama; beğenilen yer Paylaş → DoraGo ile seyahate eklenir */
 const SUGGEST = [
@@ -4279,10 +4812,10 @@ function alSearch(q, n = 6) {
   const out = [];
   for (const a of AL_IDX) {
     let sc = null;
-    if (a.c === up) sc = 0; else if (a.n.startsWith(t)) sc = 1; else if ((' ' + a.n).includes(' ' + t)) sc = 2; else if (t.length >= 3 && a.n.includes(t)) sc = 3;
+    if (a.c === up) sc = 0; else if (a.n.startsWith(t)) sc = t.length <= 2 ? 0 : 1; /* 5.26: kısa yazımda ad başı = kod eşleşmesi ("fl" → flydubai) */ else if ((' ' + a.n).includes(' ' + t)) sc = 2; else if (t.length >= 3 && a.n.includes(t)) sc = 3;
     if (sc == null) continue;
     const pop = Object.values(POP_AL).some(l => l.includes(a.c));
-    out.push({ a, sc: sc * 10 - (pop ? 5 : 0) });
+    out.push({ a, sc: sc * 10 - (pop ? 5 : 0) - (a.c === up ? 1 : 0) });
   }
   out.sort((x, y) => x.sc - y.sc || x.a.n.length - y.a.n.length);
   return out.slice(0, n).map(({ a }) => ({ v: TRAVEL.al[a.c], code: a.c, t: TRAVEL.al[a.c], s: TL`Uçuş no: ${a.c}…` }));
@@ -4303,8 +4836,26 @@ function acBind(inp, search, pick, opt = {}) {
       b.onclick = () => { const it = items[+b.dataset.i]; close(); pick(it); };
     });
   };
-  inp.addEventListener('input', show);
-  inp.addEventListener('focus', () => { if (opt.onEmpty || inp.value) show(); });
+  /* 5.26: liste klavyenin altında kalmasın — alanı yukarı kaydır, listeyi görünen alana sığdır */
+  const fit = () => {
+    if (!box) return;
+    const vv = window.visualViewport, vb = vv ? vv.offsetTop + vv.height : innerHeight;
+    const topBar = Math.max(0, ...$$('.top,.bar,.dlg>.dh').map(e => { const r = e.getBoundingClientRect(); return r.bottom > 0 && r.top < 60 ? r.bottom : 0; }));
+    box.style.maxHeight = ''; let br = box.getBoundingClientRect();
+    const over = br.bottom - (vb - 8);
+    if (over > 0) {
+      const ir = inp.getBoundingClientRect(), room = Math.max(0, ir.top - (vv ? vv.offsetTop : 0) - topBar - 10), dy = Math.min(over, room);
+      if (dy > 0) { const sc = inp.closest('.dlg'); if (sc && sc.scrollHeight > sc.clientHeight) sc.scrollTop += dy; else window.scrollBy(0, dy); }
+      br = box.getBoundingClientRect();
+      const h = Math.floor(vb - 8 - br.top);
+      if (br.bottom > vb - 8) box.style.maxHeight = Math.max(132, h) + 'px';
+    }
+  };
+  let fitT = 0; const refit = () => { clearTimeout(fitT); fitT = setTimeout(fit, 60); };
+  if (window.visualViewport) visualViewport.addEventListener('resize', refit);
+  window.addEventListener('resize', refit);
+  inp.addEventListener('input', () => { show(); fit(); });
+  inp.addEventListener('focus', () => { if (opt.onEmpty || inp.value) { show(); fit(); setTimeout(fit, 350); } });
   inp.addEventListener('blur', () => setTimeout(() => { if (opt.onBlur && box && document.activeElement !== inp) opt.onBlur(items); close(); }, 180));
   inp._acClose = close;
 }
@@ -4537,7 +5088,7 @@ function renderEdit(app, anim) {
     sync(); const [p] = d.pages.splice(+b.dataset.rm, 1); if (p && !p.isNew) d.removed.push(p.id); renderEdit(app);
   });
   if ($('#addPg')) $('#addPg').onclick = async () => {
-    sync(); const files = await pickFiles('image/*,application/pdf'); if (!files.length) return;
+    sync(); const files = await pickFiles('image/*,application/pdf,.pkpass,application/vnd.apple.pkpass'); if (!files.length) return;
     const { pages } = await filesToPages(files);
     d.pages.push(...pages.map(p => ({ id: uid(), ...p, isNew: true }))); renderEdit(app);
   };
@@ -4800,7 +5351,7 @@ function buildReminders() {
     for (const [d, txt] of [[addDays(t.refund.due, -3), TX('3 gün kaldı')], [t.refund.due, TX('bugün son gün')]]) { const w = at(d, '10:00'); if (w > now + 30000) out.push({ at: w, title: TX('İade hatırlatması'), text: TL`${name}${amt}: iade için ${txt}. Geldiyse DoraGo'da "alındı" de.`, ticket: t.id, kind: 'r' }); }
   }
   out.sort((a, b) => a.at - b.at);
-  out.push(...docsReminders(now)); out.push(...shopReminders(now));
+  out.push(...docsReminders(now)); out.push(...shopReminders(now)); out.push(...parkReminders(now));
   return out.slice(0, 200).map((r, i) => ({ id: i + 1, ...r }));
 }
 function syncReminders(noWx) {
@@ -5028,7 +5579,7 @@ async function backup() {
     for (const t of await getAll('tickets')) tickets.push({ ...t, thumb: t.thumb ? { type: t.thumb.type, data: B64.enc(await t.thumb.arrayBuffer()) } : null });
     const pages = [];
     for (const p of await getAll('pages')) pages.push({ id: p.id, w: p.w, h: p.h, type: p.blob.type, data: B64.enc(await p.blob.arrayBuffer()) });
-    const plain = TE.encode(JSON.stringify({ app: 'biletim', format: 1, at: new Date().toISOString(), tickets, pages, trips: S.trips || [], tripPhotos: (await getTP()), expenses: (await getExp()), shop: (await getShop()), docs: (await getDocs()), wish: (await getWish()), firstUse: await ensureFirstUse() }));
+    const plain = TE.encode(JSON.stringify({ app: 'biletim', format: 1, at: new Date().toISOString(), tickets, pages, trips: S.trips || [], tripPhotos: (await getTP()), expenses: (await getExp()), shop: (await getShop()), parking: (await getPark()), docs: (await getDocs()), wish: (await getWish()), firstUse: await ensureFirstUse() }));
     const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
     const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await aesKey(pin, salt), plain));
     const out = new Uint8Array(8 + 16 + 12 + ct.length); out.set(MAGIC, 0); out.set(salt, 8); out.set(iv, 24); out.set(ct, 36);
@@ -5082,6 +5633,7 @@ async function restore() {
     if (data.firstUse) { const cur = await ensureFirstUse(); if (!cur || data.firstUse < cur) { FIRST_USE = data.firstUse; await metaSet('firstUse', FIRST_USE); } }
     if (data.wish) { await getWish(); for (const [k, v] of Object.entries(data.wish)) if (!WISH[k]) WISH[k] = v; await saveWish(); }
     if (data.expenses) { await getExp(); mergeExp(data.expenses); await saveExp(); }
+    if (data.parking) { await getPark(); const np = []; for (const [k, r] of Object.entries(data.parking)) { if (PARK[k]) continue; PARK[k] = r; for (const id of r.ph || []) { const x = pageMap.get(id); if (x) np.push({ id: x.id, w: x.w, h: x.h, blob: new Blob([B64.dec(x.data)], { type: x.type }) }); } } if (np.length) await putPages(np); await savePark(); }
     if (data.shop) { await getShop(); const have = new Set(Object.values(SHOP).flatMap(r => r.items.map(i => i.ph)).filter(Boolean)); mergeShop(data.shop); const np = []; for (const r of Object.values(data.shop)) for (const i of r.items || []) { const x = i.ph && !have.has(i.ph) && pageMap.get(i.ph); if (x) np.push({ id: x.id, w: x.w, h: x.h, blob: new Blob([B64.dec(x.data)], { type: x.type }) }); } if (np.length) await putPages(np); await saveShop(); }
     if (data.tripPhotos) { await getTP(); const np = []; for (const [k, r] of Object.entries(data.tripPhotos)) { const cur = TP[k] || (TP[k] = { cover: r.cover, items: [], ...(r.cpos ? { cpos: r.cpos } : {}) }); for (const it of r.items || []) { const pg = pageMap.get(it.id); if (!pg || cur.items.some(x => x.id === it.id) || cur.items.length >= PHOTO_MAX) continue; np.push({ id: pg.id, w: pg.w, h: pg.h, blob: new Blob([B64.dec(pg.data)], { type: pg.type }) }); cur.items.push(it); } if (!cur.cover && cur.items[0]) cur.cover = cur.items[0].id; if (!cur.items.length) delete TP[k]; } if (np.length) await putPages(np); await saveTP(); }
     busy(false);
@@ -5274,6 +5826,8 @@ function openLaunchTicket() {
   }
   if (id === 'docs') { openDocs(); return; }
   if (id && id.startsWith('shop:')) { openShop(id.slice(5)); return; }
+  if (id && id.startsWith('park:')) { const n = id.slice(5); getPark().then(() => openTrip(n)).then(() => parkSheet(n)); return; }
+  if (id && id.startsWith('parkdone:')) { parkDone(id.slice(9)); return; }
   if (!id || !S.tickets.find(t => t.id === id)) return;
   if (S.view === 'edit') return;
   openTicket(id);
