@@ -746,7 +746,7 @@ async function renderStats(app, anim) {
   if (!years.length) years.push(new Date().getFullYear());
   if (!S.statsYear || !years.includes(S.statsYear)) S.statsYear = years[0];
   const y = S.statsYear, st = yearStats(y), prev = years.includes(y - 1) ? yearStats(y - 1) : null;
-  const tile = (n, l) => `<div class="sst"><b>${n}</b><span>${l}</span></div>`;
+  const tile = (n, l, ic, c) => `<div class="sst"><span class="sti" style="--tc:${c};color:${c}">${I(ic)}</span><span class="stx"><b>${n}</b><span>${l}</span></span></div>`;
   const cmp = prev && st.fl.length !== prev.fl.length ? TL` · geçen yıldan ${Math.abs(st.fl.length - prev.fl.length)} ${st.fl.length > prev.fl.length ? TX('fazla') : TX('az')}` : '';
   const topCity = st.cities.length ? st.cities[0] : '';
   app.innerHTML = TL`<div class="page stats${animCls(anim)}">
@@ -758,7 +758,7 @@ async function renderStats(app, anim) {
       ${st.done.length ? TL`<button class="wrapbtn" id="wrapGo">${I('sparkles')}<span><b>${y} yıl özeti</b><small>Hikâye gibi kaydır, paylaş</small></span><i>›</i></button>` : ''}
       <button class="wrapbtn wopen" id="wOpen">${I('world')}<span><b>Dünya haritam</b><small>Gittiklerin, planladıkların, gitmek istediklerin</small></span><i>›</i></button>
       ${st.done.length ? TL`<div class="smap" id="smapGo">${mapSvg(st)}</div>
-      <div class="sgrid">${tile(fmtN(st.cities.length), TL`şehir · ${st.countries.length} ülke`)}${tile(fmtN(st.fl.length), TL`uçuş · ${fmtN(st.km)} km`)}${tile(fmtN(st.days), TX('gün yolda'))}${tile(fmtN(st.museums), TX('müze ve etkinlik'))}</div>
+      <div class="sgrid">${tile(fmtN(st.cities.length), TL`şehir · ${st.countries.length} ülke`, 'map-pin', '#C2410C')}${tile(fmtN(st.fl.length), TL`uçuş · ${fmtN(st.km)} km`, 'plane-tilt', '#1E4FA0')}${tile(fmtN(st.days), TX('gün yolda'), 'calendar', '#0F6E56')}${tile(fmtN(st.museums), TX('müze ve etkinlik'), 'ticket', '#6B3FA0')}</div>
       ${st.longest ? TL`<p class="snote">En uzun uçuş: ${esc(apCity(st.longest.from) || st.longest.from)} → ${esc(apCity(st.longest.to) || st.longest.to)} · ${fmtN(Math.round(flightKm(st.longest)))} km${cmp}</p>` : ''}
       <div class="sh"><b>Pullarım</b><span>${st.countries.length} ülke${st.countries.length ? '' : TX(' · yurt dışı seyahatlerin burada birikir')}</span></div>
       <div class="stamps">${st.countries.map((c, i) => TL`<div class="pul" style="--pc:${['#C2410C', '#0F766E', '#854F0B', '#378ADD', '#993556', '#3B6D11'][i % 6]}"><b>${esc(c.cc)}</b><small>${esc(countryName(c.cc))}</small><i>${c.n} kez</i></div>`).join('')}<div class="pul empty"><b>?</b><small>sıradaki</small></div></div>`
@@ -913,7 +913,7 @@ async function tripCountry(name) {
   return { ...c, cc: dest.cc, city: dest.city, lat: dest.lat, lon: dest.lon, country: countryName(dest.cc), tzName: tz, diffH, foreign: dest.cc !== HOME_CC };
 }
 const diffTxt = h => { if (h == null) return ''; const hn = homeName(); return h === 0 ? TL`${hn} ile aynı saat` : TL`${hn}${ablSfx(hn)} ${Math.abs(h)} saat ${h > 0 ? TX('ileride') : TX('geride')}`; };
-async function openCInfo(name) { busy(TX('Hazırlanıyor…')); await loadSpecial(); evRefresh(EVD && EVD.v).then(() => { if (S.view === 'cinfo') quietRender(); }); const ci = await tripCountry(name); busy(false); if (!ci) { toast(TX('Bu seyahatin ülkesi bulunamadı')); return; } S.cinfo = { name, ci }; go('cinfo'); }
+async function openCInfo(name) { busy(TX('Hazırlanıyor…')); const ci = await tripCountry(name); busy(false); if (!ci) { toast(TX('Bu seyahatin ülkesi bulunamadı')); return; } S.cinfo = { name, ci }; go('cinfo'); }
 /* ---------- 5.24: konuşma kılavuzu (www/phrases.js, tembel) ---------- */
 const PHR_LANGS = new Set('en tr de fr it es pt nl el ar ru ja zh ko th cs hu pl hr ka'.split(' '));
 const PHR_ALIAS = { sr: 'hr', bs: 'hr', cnr: 'hr' };
@@ -983,137 +983,6 @@ function phrShow(i) {
   dlgClose = close;
   ov.onclick = e => { if (e.target.closest('#phSay')) { phrSpeak(i); return; } close(); };
 }
-/* ================= 5.26: Seyahatteki özel günler (resmi tatil, etkinlik, dikkat edilecek günler) =================
-   holidays.js (window.HOL, date-holidays verisi) + events.json (kurallı etkinlikler; internet varken doragoapp.github.io'dan güncellenir) + WEEK_RULES */
-let SP_P = null, EVD = null;
-const EV_URL = 'https://doragoapp.github.io/events.json';
-function loadSpecial() {
-  if (window.HOL && EVD) return Promise.resolve();
-  if (!SP_P) SP_P = (async () => {
-    await new Promise(res => { if (window.HOL) return res(); const s = document.createElement('script'); s.src = 'holidays.js'; s.onload = res; s.onerror = res; document.head.appendChild(s); });
-    let loc = null; try { loc = await (await fetch('events.json')).json(); } catch (e) {}
-    const rem = await metaGet('evRemote').catch(() => null);
-    EVD = rem && loc && rem.v > loc.v ? rem : loc || rem || { v: 0, ev: [] };
-  })().catch(e => { SP_P = null; console.warn('özel günler', e); });
-  return SP_P;
-}
-/* haftada en çok bir kez uzaktaki events.json'a bak (yalnız dosya indirilir, veri gönderilmez) */
-async function evRefresh(locV) {
-  try {
-    if (location.hostname === 'doragoapp.github.io' || !navigator.onLine) return;
-    const at = (await metaGet('evAt')) || 0; if (Date.now() - at < 7 * 864e5) return;
-    await metaSet('evAt', Date.now() - 6 * 864e5); /* başarısızsa ertesi gün yeniden dene */
-    const r = await fetch(EV_URL, { cache: 'no-cache' }); if (!r.ok && r.status !== 304) return;
-    await metaSet('evAt', Date.now()); if (r.status === 304) return;
-    const j = await r.json(); if (!j || !Array.isArray(j.ev) || !(j.v > Math.max(locV || 0, (EVD && EVD.v) || 0))) return;
-    await metaSet('evRemote', j); EVD = j;
-  } catch (e) {}
-}
-function easterD(y) { const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451), mo = Math.floor((h + l - 7 * m + 114) / 31), da = (h + l - 7 * m + 114) % 31 + 1; return new Date(y, mo - 1, da, 12); }
-function orthEasterD(y) { const a = y % 4, b = y % 7, c = y % 19, d = (19 * c + 15) % 30, e = (2 * a + 4 * b - d + 34) % 7, mo = Math.floor((d + e + 114) / 31), da = (d + e + 114) % 31 + 1; return new Date(y, mo - 1, da + 13, 12); }
-function advent1D(y) { const x = new Date(y, 11, 25, 12), w = x.getDay(); return new Date(y, 11, 25 - (w || 7) - 21, 12); }
-function nthWdD(y, m, wd, n) { if (n > 0) { const f = new Date(y, m - 1, 1, 12); return new Date(y, m - 1, 1 + (wd - f.getDay() + 7) % 7 + (n - 1) * 7, 12); } const l = new Date(y, m, 0, 12); return new Date(y, m - 1, l.getDate() - (l.getDay() - wd + 7) % 7, 12); }
-const addD = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n, 12);
-/* etkinliğin y yılındaki aralığı: { a, b, ver } */
-function evRange(ev, y) {
-  if (ev.y && ev.y[y]) return { a: ev.y[y][0], b: ev.y[y][1], ver: y };
-  const r = ev.r || {}; let s;
-  if (r.f) { const [m, d] = r.f.split('-').map(Number); s = new Date(y, m - 1, d, 12); }
-  else if (r.n) s = nthWdD(y, r.n[0], r.n[1], r.n[2]);
-  else if (r.e != null) s = addD(easterD(y), r.e);
-  else if (r.oe != null) s = addD(orthEasterD(y), r.oe);
-  else if (r.a != null) s = addD(advent1D(y), r.a);
-  else return null;
-  if (r.o) s = addD(s, r.o);
-  let b;
-  if (r.to) { const [m, d] = r.to.split('-').map(Number); b = new Date(y + (m < s.getMonth() + 1 ? 1 : 0), m - 1, d, 12); }
-  else b = addD(s, (r.d || 1) - 1);
-  return { a: ymd(s), b: ymd(b) };
-}
-/* haftalık / dönemsel dikkat kuralları (ülke) */
-const SUN_CLOSED = { DE: 1, AT: 1, CH: 1, NO: 1, PL: 1, HR: 1, SI: 1 };
-const PL_TRADE_SUN = ['2026-01-25', '2026-03-29', '2026-04-26', '2026-06-28', '2026-08-30', '2026-12-06', '2026-12-13', '2026-12-20'];
-const FRI_SAT = { SA: 1, QA: 1, KW: 1, OM: 1, BH: 1, JO: 1, EG: 1, IL: 1, DZ: 1, IQ: 1, LY: 1, SD: 1, YE: 1, IR: 1 };
-const MUSEUM_OFF = { IT: 1, DE: 1, AT: 1, ES: 1, PT: 1, FR: 2 }; /* 1 Pazartesi, 2 Salı (Louvre vb.) */
-const SIESTA = { ES: '14:00–17:00', IT: '13:00–16:00', GR: '14:00–17:30', PT: '13:00–15:00', CY: '13:00–16:00', MT: '12:00–16:00' };
-const RAMADAN_CC = { SA: 1, AE: 1, QA: 1, KW: 1, OM: 1, BH: 1, JO: 1, EG: 1, MA: 1, DZ: 1, TN: 1, IR: 1, BN: 1, MV: 1, PK: 1, MY: 1, ID: 1 };
-function hijriMonth(d) { try { return +new Intl.DateTimeFormat('en-u-ca-islamic-umalqura', { month: 'numeric' }).format(d); } catch (e) { return 0; } }
-const HOL_TR = { 'Christmas Day': 'Noel', 'Christmas Eve': 'Noel arifesi', 'Boxing Day': 'Noel\'in ikinci günü', 'St. Stephen\'s Day': 'Aziz Stefan Günü', 'New Year\'s Eve': 'Yılbaşı gecesi', 'New Year’s Eve': 'Yılbaşı gecesi', 'Good Friday': 'Kutsal Cuma', 'Easter Sunday': 'Paskalya', 'Easter Monday': 'Paskalya Pazartesisi', 'Holy Saturday': 'Kutsal Cumartesi', 'Maundy Thursday': 'Kutsal Perşembe', 'Ascension Day': 'Göğe Yükseliş Günü', 'Pentecost': 'Pentekost', 'Whit Monday': 'Pentekost Pazartesisi', 'Corpus Christi': 'Kutsal Beden Bayramı', 'Assumption': 'Meryem\'in Göğe Kabulü', 'Assumption Day': 'Meryem\'in Göğe Kabulü', 'All Saints\' Day': 'Azizler Günü', 'All Saints’ Day': 'Azizler Günü', 'Immaculate Conception': 'Lekesiz Gebelik Bayramı', 'Epiphany': 'Epifani (Üç Kral)', 'Labour Day': 'İşçi Bayramı', 'Labor Day': 'İşçi Bayramı', 'May Day': '1 Mayıs', 'National Day': 'Ulusal gün', 'National Holiday': 'Ulusal bayram', 'Independence Day': 'Bağımsızlık Günü', 'Spring Festival': 'Bahar Bayramı (Çin Yeni Yılı)', 'Mid-Autumn Festival': 'Ay Festivali', 'Dragon Boat Festival': 'Ejderha Teknesi Festivali', 'Shrove Tuesday': 'Karnaval Salısı', 'Shrove Monday': 'Karnaval Pazartesisi', 'Carnival': 'Karnaval', 'Thanksgiving Day': 'Şükran Günü', 'Thanksgiving': 'Şükran Günü', 'Armistice Day': 'Ateşkes Günü', 'Victory Day': 'Zafer Bayramı', 'German Unity Day': 'Alman Birliği Günü', 'Early May bank holiday': 'Mayıs başı banka tatili', 'Spring bank holiday': 'Bahar banka tatili', 'Summer bank holiday': 'Yaz banka tatili', 'Midsummer Eve': 'Yaz Dönümü Arifesi', 'Midsummer Day': 'Yaz Dönümü', 'First day of Ramadan': 'Ramazan\'ın ilk günü', 'Islamic New Year': 'Hicri Yılbaşı', 'Birthday of Muhammad (Mawlid)': 'Mevlid Kandili', 'Day of the Dead': 'Ölüler Günü', 'Halloween': 'Cadılar Bayramı', 'King’s Day': 'Kral Günü', 'Constitution Day': 'Anayasa Günü', 'Republic Day': 'Cumhuriyet Bayramı', 'Women’s Carnival Day': 'Kadınlar Karnaval Günü' };
-function holName(n) { if (Array.isArray(n)) return LANG === 'tr' ? n[1] : n[0]; if (LANG !== 'tr') return n; const k = n.replace(/\s*\((substitute day|observed)\)/i, ''); const t = HOL_TR[k] || HOL_TR[k.replace(/’/g, '\'')]; return t ? t + (k !== n ? TX(' (telafi)') : '') : n; }
-/* seyahatin noktaları (etkinlik eşleşmesi için) */
-function tripPoints(name) {
-  const pts = [], p = tripPin(name); if (p) pts.push(p);
-  for (const t of S.tickets) if (t.trip === name) { if (hasC(t)) pts.push({ lat: t.lat, lon: t.lon }); if (t.type === 'ucak') { const a = apRec(t.to); if (a && a.cc !== HOME_CC) pts.push(a); } }
-  return pts;
-}
-/* { day, end, kind:'hol'|'ev'|'wk', t, s, tag, ver, ap, q } — seyahat aralığı (±1 gün) */
-function tripSpecial(name) {
-  if (!window.HOL || !EVD) return [];
-  const g = allTrips().find(x => x.name === name); if (!g || !g.a) return [];
-  const A0 = addDays(g.a, -1), B0 = addDays(g.e || g.a, 1), out = [], ccs = tripCCs(name).length ? tripCCs(name) : [HOME_CC];
-  const yrs = [...new Set([A0.slice(0, 4), B0.slice(0, 4)])].map(Number);
-  for (const cc of ccs) {
-    const H = window.HOL[cc]; if (!H) continue;
-    for (const e of H.d.split(' ')) {
-      const m = /^(\d{6})(?:\+(\d+))?:(\d+)([bo]?)$/.exec(e); if (!m) continue;
-      const day = '20' + m[1].slice(0, 2) + '-' + m[1].slice(2, 4) + '-' + m[1].slice(4, 6), n = +(m[2] || 1), end = addDays(day, n - 1);
-      if (end < A0 || day > B0) continue;
-      const nm = holName(H.n[+m[3]]), typ = m[4];
-      out.push({ day, end, kind: typ === 'o' ? 'obs' : 'hol', t: nm, s: typ === 'o' ? TX('Önemli gün · kalabalık ya da kısa çalışma saatleri olabilir') : typ === 'b' ? TX('Banka tatili · bankalar ve bazı dükkânlar kapalı') : TX('Resmi tatil · dükkân, banka ve müzelerin çoğu kapalı olabilir; toplu taşıma tatil tarifesinde'), tag: ccs.length > 1 ? countryName(cc) : '', cc });
-    }
-  }
-  const pts = tripPoints(name);
-  for (const ev of EVD.ev || []) {
-    if (!ccs.includes(ev.c)) continue;
-    if (ev.ll && pts.length && !pts.some(p => distKm(p, { lat: ev.ll[0], lon: ev.ll[1] }) <= 60)) continue;
-    if (ev.ll && !pts.length) continue;
-    for (const y of yrs) for (const yy of [y - 1, y]) {
-      const r = evRange(ev, yy); if (!r || r.b < A0 || r.a > B0) continue;
-      if (out.some(o => o.id === ev.id && o.day === r.a)) continue;
-      const L = LANG === 'tr' ? 0 : 1;
-      out.push({ id: ev.id, day: r.a, end: r.b, kind: 'ev', t: ev.n[L], s: (ev.t || [])[L] || '', ver: r.ver, ap: !r.ver && ev.ap, w: ev.w ? ev.w[L] : '', q: `${ev.n[1]} ${yy} dates` });
-    }
-  }
-  /* haftalık dikkat */
-  for (let d = g.a; d <= (g.e || g.a); d = addDays(d, 1)) {
-    const wd = new Date(d + 'T12:00').getDay();
-    for (const cc of ccs) {
-      const tag = ccs.length > 1 ? countryName(cc) : '';
-      if (wd === 0 && SUN_CLOSED[cc] && !(cc === 'PL' && PL_TRADE_SUN.includes(d)))
-        out.push({ day: d, end: d, kind: 'wk', t: TX('Pazar · marketler kapalı'), s: cc === 'HR' ? TX('Dükkânlar yılda yalnız 16 Pazar açılabilir; yazın sahilde çoğu açık olur. İstasyon, havalimanı ve benzinlikler açık.') : cc === 'NO' ? TX('Yalnız küçük marketler (100 m² altı), benzinlik ve kiosklar açık. Alışverişi Cumartesi yap.') : TX('Büyük market ve dükkânlar kapalı; istasyon, havalimanı ve benzinlik marketleri açık. Alışverişi Cumartesi yap.'), tag });
-      if (FRI_SAT[cc] && wd === 5) out.push({ day: d, end: addDays(d, 1), kind: 'wk', t: cc === 'IL' ? TX('Şabat (Cuma akşamı – Cumartesi akşamı)') : TX('Hafta sonu: Cuma–Cumartesi'), s: cc === 'IL' ? TX('Toplu taşımanın çoğu durur, dükkânlar kapanır; taksi ve kiralık araç plana göre.') : TX('Resmi daireler ve bankalar kapalı; Cuma öğle namazı saatinde dükkânlar kısa süre kapanabilir.'), tag });
-      if (MUSEUM_OFF[cc] && wd === MUSEUM_OFF[cc]) out.push({ day: d, end: d, kind: 'wk', t: wd === 1 ? TX('Pazartesi · çoğu müze kapalı') : TX('Salı · bazı büyük müzeler kapalı'), s: cc === 'FR' ? TX('Louvre gibi bazı ulusal müzeler Salı kapalı (Orsay Pazartesi). Gitmeden saatlerine bak.') : TX('Devlet müzelerinin çoğu Pazartesi kapalı. Gitmeden saatlerine bak.'), tag });
-    }
-  }
-  for (const cc of ccs) if (SIESTA[cc]) out.push({ day: g.a, end: g.e || g.a, kind: 'wk', t: TL`Öğle arası (${SIESTA[cc]})`, s: TX('Küçük dükkânlar öğleden sonra kapanabilir; büyük mağazalar ve turistik yerler açık.'), tag: ccs.length > 1 ? countryName(cc) : '', every: 1 });
-  for (const cc of ccs) if (RAMADAN_CC[cc]) {
-    let a = null, b = null; for (let d = g.a; d <= (g.e || g.a); d = addDays(d, 1)) if (hijriMonth(new Date(d + 'T12:00')) === 9) { a = a || d; b = d; }
-    if (a) out.push({ day: a, end: b, kind: 'wk', t: TX('Ramazan'), s: TX('Gündüz bazı restoranlar kapalı; halka açık yerde yeme-içmeye dikkat. İftar sonrası şehir canlanır.'), tag: ccs.length > 1 ? countryName(cc) : '', every: 1 });
-  }
-  const rank = { hol: 0, ev: 1, obs: 2, wk: 3 };
-  return out.sort((x, y) => x.day < y.day ? -1 : x.day > y.day ? 1 : rank[x.kind] - rank[y.kind]);
-}
-const spOn = (it, day) => it.day <= day && it.end >= day;
-/* gün koçanı çipleri (tatil/etkinlik + o güne özel dikkat) */
-function spChips(sp, day, seen) {
-  const on = sp.filter(x => !x.every && spOn(x, day) && !(seen && x.end > x.day && seen.has(x))); if (!on.length) return '';
-  if (seen) on.forEach(x => seen.add(x));
-  return on.slice(0, 2).map(x => `<span class="dchip sp-${x.kind}">${x.kind === 'ev' ? '🎉' : x.kind === 'wk' ? '⚠' : '★'} ${esc(x.t.length > 26 ? x.t.slice(0, 25) + '…' : x.t)}</span>`).join('');
-}
-function spHtml(name) {
-  const sp = tripSpecial(name); if (!sp.length) return '';
-  const g = allTrips().find(x => x.name === name) || {};
-  const fd = d => new Date(d + 'T12:00').toLocaleDateString(LOC, { day: 'numeric', month: 'short', weekday: 'short' });
-  const rows = sp.map(x => {
-    const range = x.every ? TX('Her gün') : x.end !== x.day ? `${fd(x.day)} – ${fd(x.end)}` : fd(x.day);
-    const lab = x.kind === 'ev' ? (x.ver ? TL`<span class="spl ok">${I('check')} Doğrulandı · ${x.ver}</span>` : x.ap ? TL`<span class="spl ap">Yaklaşık</span>` : '') : x.kind === 'hol' ? TX('<span class="spl hol">Resmi tatil</span>') : x.kind === 'obs' ? TX('<span class="spl">Önemli gün</span>') : TX('<span class="spl wk">Dikkat</span>');
-    const out = x.day < (g.a || '') || x.day > (g.e || g.a || '') ? ' out' : '';
-    return `<div class="spi sp-${x.kind}${out}"><i class="spd"></i><div class="spb"><small>${esc(range)}${x.tag ? ' · ' + esc(x.tag) : ''}</small><b>${esc(x.t)}</b>${lab}${x.s ? `<p>${esc(x.s)}</p>` : ''}${x.w ? `<p class="spw">${esc(x.w)}</p>` : ''}${x.q && !x.ver ? TL`<button class="spq" data-q="${esc(x.q)}">${I('external-link')} Tarihleri kontrol et</button>` : ''}</div></div>`;
-  }).join('');
-  return TL`<div class="exsec">Seyahatindeki özel günler</div><div class="sptl">${rows}</div>`;
-}
-function spCount(name) { return tripSpecial(name).filter(x => x.kind === 'hol' || x.kind === 'ev').length; }
-
 function renderCInfo(app, anim) {
   const { name, ci } = S.cinfo || {}; if (!ci) { go('home'); return; }
   const row = (ic, k, v, sub) => v ? `<div class="vrow"><span class="vri">${I(ic)}</span><span class="vrt"><small>${esc(k)}</small><b>${esc(v)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</span></div>` : '';
@@ -1131,9 +1000,8 @@ function renderCInfo(app, anim) {
       ${ci.water === 0 ? row('droplet', TX('Musluk suyu'), TX('Genelde içilmez'), TX('Şişe su tercih et, buz ve çiğ sebzeye dikkat')) : ''}
       ${tr ? row('bus', TL`${ci.city} ulaşımı`, tr) : ''}
       ${ci.foreign ? row('id', TX('Giriş koşulları'), TX('Vize / giriş koşullarını kontrol et'), TX('Kurallar değişebiliyor; resmi kaynaktan bak')) : ''}
-    </div>${spHtml(name)}<p class="snote">Bilgiler internetsiz çalışır ve "genelde" geçerlidir; yerel duyurular önceliklidir.</p></div></div>`;
+    </div><p class="snote">Bilgiler internetsiz çalışır ve "genelde" geçerlidir; yerel duyurular önceliklidir.</p></div></div>`;
   $('#back').onclick = () => go('home', 'back');
-  $$('.spq', app).forEach(b => b.onclick = () => openUrl('https://www.google.com/search?q=' + encodeURIComponent(b.dataset.q)));
 }
 
 /* ================= 5.9: masraflar ================= */
@@ -2160,7 +2028,7 @@ function visaStamp(v, i) {
   const st = ok ? TX('GEÇERLİ') : exp ? TX('BİTTİ') : rej ? VSTAT.rej.toLocaleUpperCase(LANG) : (VSTAT[v.status] || '').toLocaleUpperCase(LANG);
   const det = ok ? [v.entry === 'multi' ? TX('ÇOK GİRİŞ') : v.entry === 'single' ? TX('TEK GİRİŞ') : '', v.to ? fdate(v.to) : ''] : [v.status === 'appt' && v.appt ? `${fdate(v.appt.slice(0, 10))} ${v.appt.slice(11, 16)}` : ''];
   const rot = [-7, 5, -3, 8, -5, 3][i % 6], round = v.kind === 'eta' || v.kind === 'evisa';
-  return `<button class="vst${ok ? '' : ' pend'}${round ? ' rnd' : ''}" data-vid="${esc(v.id)}" style="--sc:${col};--r:${rot}deg"><b>${esc(regionName(v.region).toLocaleUpperCase(LANG))}</b>${v.kind && v.kind !== 'visa' ? `<small>${esc(VKIND[v.kind])}</small>` : ''}<em>${esc(st)}</em>${det.filter(Boolean).length ? `<small>${esc(det.filter(Boolean).join(' · '))}</small>` : ''}</button>`;
+  return `<button class="vstp${ok ? '' : ' pend'}${round ? ' rnd' : ''}" data-vid="${esc(v.id)}" style="--sc:${col};--r:${rot}deg"><b>${esc(regionName(v.region).toLocaleUpperCase(LANG))}</b>${v.kind && v.kind !== 'visa' ? `<small>${esc(VKIND[v.kind])}</small>` : ''}<em>${esc(st)}</em>${det.filter(Boolean).length ? `<small>${esc(det.filter(Boolean).join(' · '))}</small>` : ''}</button>`;
 }
 function visaRow(v) {
   const st = v.status === 'ok' ? (v.to && v.to < todayStr() ? ['er', TX('Bitti')] : ['ok', TX('Geçerli')]) : v.status === 'rej' ? ['er', VSTAT.rej] : ['wn', VSTAT[v.status]];
@@ -2183,7 +2051,7 @@ function renderDocs(app, anim) {
   } else {
     const sch = DOCS.people.filter(p => DOCS.visas.some(v => v.region === 'SCH' && (v.people || []).includes(p.id)) || schengenDays(p.id, todayStr()) > 0);
     body = TL`${warns.length ? `<div class="dwarn">${warns.slice(0, 6).map(w => `<p class="${w.lvl}">${I(w.lvl === 'info' ? 'calendar-event' : 'alert-triangle')}<span>${esc(w.txt)}</span></p>`).join('')}</div>` : ''}
-      <div class="exsec">Pasaportlar</div><div class="ppg">${DOCS.people.map(passCover).join('')}<button class="ppc add" id="dAddP">${I('user-plus')}<b>Kişi ekle</b></button></div>
+      <div class="exsec">Pasaportlar</div><div class="pspg">${DOCS.people.map(passCover).join('')}<button class="ppc add" id="dAddP">${I('user-plus')}<b>Kişi ekle</b></button></div>
       <div class="exsec">Vizeler</div>${DOCS.visas.length ? `<div class="vrows">${DOCS.visas.slice().sort((x, y) => (y.to || '') < (x.to || '') ? -1 : 1).map(visaRow).join('')}</div>` : TX('<p class="snote">Henüz vize kaydı yok.</p>')}
       ${sch.length ? TL`<div class="exsec">Schengen 90/180</div><div class="vrows" style="padding:12px">${sch.map(p => `${DOCS.people.length > 1 ? `<b class="dschn">${esc(p.name)}</b>` : ''}${schBar(p.id)}`).join('')}</div>` : ''}
       <button class="tmini dlook" id="dLook">${I('world')}<span><small>Vize gerekiyor mu?</small><b>Ülkeye göre bak</b></span></button>
@@ -2936,14 +2804,13 @@ function tripDays(name, g, ts) {
   const dated = ts.filter(t => t.date), undated = ts.filter(t => !t.date);
   const days = [...new Set(dated.map(t => t.date))];
   const dIdx = d => g.a ? Math.round((new Date(d + 'T12:00') - new Date(g.a + 'T12:00')) / 864e5) + 1 : 0;
-  const sp = window.HOL && EVD && !g.past ? tripSpecial(name) : (g.past || loadSpecial().then(() => { if (S.view === 'trip' && S.tripName === name) quietRender(); }), []);
-  let out = '', i = 0; const spSeen = new Set();
+  let out = '', i = 0;
   for (const day of days) {
     const list = dated.filter(t => t.date === day), key = name + '|' + day, pastD = (day < today && !list.some(t => (t.endDate || t.date) >= today));
     const open = key in S_ ? S_[key] : day === today;
     const [y, m, d] = day.split('-').map(Number), dl = daysLeft(day), wd = new Date(y, m - 1, d).toLocaleDateString(LOC, { weekday: 'short' });
     const n = dIdx(day), lab = [n > 0 ? TL`${n}. gün` : '', dl === 0 ? TX('Bugün') : dl === 1 ? TX('Yarın') : ''].filter(Boolean).join(' · ') || `${wd} ${d}`;
-    out += dayStubHtml({ key, day, list, lab, open, pastD, chips: sp.length ? spChips(sp, day, spSeen) : '', cards: list.map(t => card(t, (t.endDate || t.date) < today, i++, 'dl')).join('') });
+    out += dayStubHtml({ key, day, list, lab, open, pastD, cards: list.map(t => card(t, (t.endDate || t.date) < today, i++, 'dl')).join('') });
   }
   if (undated.length) {
     const key = name + '|-', open = key in S_ ? S_[key] : false;
@@ -3001,7 +2868,7 @@ function renderTrip(app, anim) {
     tile('tmShop', 'shopping-cart', TX('Alınacak'), sc && sc[0] === sc[1] ? 'ok' : '', sc ? sc[1] - sc[0] : 0),
     tile('tmExp', 'cash', TX('Masraf')),
     tripCCs(name).length ? tile('tmVisa', 'id', vw && vw.lvl !== 'ok' ? TX('Vize') : TX('Vize ✓'), vw ? vw.lvl : 'ok', vw && (vw.lvl === 'err' || vw.lvl === 'warn' || vw.lvl === 'info') ? '!' : 0) : '',
-    foreign ? tile('tmInfo', 'info-circle', TX('Bilgi'), 'ev', !g.past && window.HOL && EVD ? spCount(name) : 0) : '',
+    foreign ? tile('tmInfo', 'info-circle', TX('Bilgi')) : '',
     !g.past ? tile('tmSug', 'map-search', TX('Öneriler')) : '',
     ended ? tile('tmCard', 'photo', TX('Kartpostal')) : '',
     tile('tmPdf', 'file-text', TX('PDF')),
@@ -3917,7 +3784,7 @@ function renderCal(app, anim) {
     <div class="top">${header(TX('Takvim'))}</div>
     <div class="mh"><button class="ar" id="prevM" aria-label="Önceki ay">${I('chevron-left')}</button><b><button class="mpk" id="mPick">${MONTH_TR[m - 1]} ${y} ${I('chevron-down')}</button></b>
       ${isCur ? '' : TX('<button class="today-btn" id="todayB">Bugün</button>')}<button class="ar" id="nextM" aria-label="Sonraki ay">${I('chevron-right')}</button></div>
-    <div class="cal"><i class="rings" aria-hidden="true">${'<b></b>'.repeat(7)}</i><div class="${anim === 'slide-l' || anim === 'slide-r' ? anim : ''}">
+    <div class="cal calw"><i class="rings" aria-hidden="true">${'<b></b>'.repeat(7)}</i><div class="${anim === 'slide-l' || anim === 'slide-r' ? anim : ''}">
       <div class="wd"><div>Pzt</div><div>Sal</div><div>Çar</div><div>Per</div><div>Cum</div><div>Cmt</div><div>Paz</div></div>
       <div class="gr">${grid}</div></div>
       ${legend ? `<div class="leg">${legend}</div>` : `<div class="leg">${monthCount ? '' : TX('Bu ay bilet yok')}</div>`}</div>
@@ -4013,7 +3880,7 @@ function renderViewer(app, anim) {
       ${pfActive(t) ? pfHtml(t) : ''}
       ${pages.length ? TL`<div class="vpg"><div class="vpgh"><b>${isPlace(t.type) ? TX('Fotoğraflar') : TX('Bilet')} · ${pages.length} sayfa</b><button id="vfull">${I('external-link')} Tam ekran</button></div>
         <div class="vthumbs">${pages.map((p, i) => `<button class="vth" data-pv="${i}" style="background-image:url('${blobURL('p:' + p.id, p.blob)}')"><span>${i + 1}</span></button>`).join('')}</div></div>` : ''}
-      ${rows ? `<div class="vrows">${rows}</div>` : ''}
+      ${rows ? `<div class="vrows vrv">${rows}</div>` : ''}
     </div></div>`;
   $('#back').onclick = () => go('home', 'back');
   $('#edit').onclick = () => editTicket(t);
@@ -4854,7 +4721,7 @@ function acBind(inp, search, pick, opt = {}) {
   let fitT = 0; const refit = () => { clearTimeout(fitT); fitT = setTimeout(fit, 60); };
   if (window.visualViewport) visualViewport.addEventListener('resize', refit);
   window.addEventListener('resize', refit);
-  inp.addEventListener('input', () => { show(); fit(); });
+  inp.addEventListener('input', e => { if (!e.isTrusted) { close(); return; } show(); fit(); }); /* programla tetiklenen (seçim sonrası) olayda yeniden arama yok */
   inp.addEventListener('focus', () => { if (opt.onEmpty || inp.value) { show(); fit(); setTimeout(fit, 350); } });
   inp.addEventListener('blur', () => setTimeout(() => { if (opt.onBlur && box && document.activeElement !== inp) opt.onBlur(items); close(); }, 180));
   inp._acClose = close;

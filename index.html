@@ -1075,9 +1075,13 @@ html[data-theme=gece]{--grainOp:.06;--cardSh:0 6px 18px rgba(0,0,0,.45),0 1px 3p
 .tcard{position:relative;border:0;box-shadow:var(--cardSh);overflow:hidden}
 .tcard::after,.dstub::after{content:"";position:absolute;inset:0;border-radius:inherit;background-image:var(--grain);opacity:var(--grainOp);mix-blend-mode:multiply;pointer-events:none;z-index:3}
 html[data-theme=gece] .tcard::after,html[data-theme=gece] .dstub::after{mix-blend-mode:screen}
-.tperf{display:block;position:relative;height:0;border-top:2px dashed color-mix(in srgb,var(--ink) 16%,transparent);margin:0 14px;z-index:2}
-.tperf::before,.tperf::after{content:"";position:absolute;top:-10px;width:18px;height:18px;border-radius:50%;background:var(--bg)}
-.tperf::before{left:-24px}.tperf::after{right:-24px}
+/* koçan C: büyük oyulmuş çentik + delikli yırtma çizgisi */
+.tperf{--ph:color-mix(in srgb,var(--bg) 78%,var(--ink));display:block;position:relative;height:6px;margin:-3px 22px;z-index:4;background:radial-gradient(circle,var(--ph) 2.6px,transparent 3px) 0 50%/11px 6px repeat-x}
+html[data-theme=gece] .tperf{--ph:var(--bg)}
+.tperf::before,.tperf::after{content:"";position:absolute;top:-10px;width:26px;height:26px;border-radius:50%;background:var(--bg)}
+.tperf::before{left:-35px;box-shadow:inset -4px 0 6px color-mix(in srgb,var(--ink) 34%,transparent)}
+.tperf::after{right:-35px;box-shadow:inset 4px 0 6px color-mix(in srgb,var(--ink) 34%,transparent)}
+html[data-theme=gece] .tperf::before{box-shadow:inset -3px 0 5px rgba(0,0,0,.6)}html[data-theme=gece] .tperf::after{box-shadow:inset 3px 0 5px rgba(0,0,0,.6)}
 /* sıradaki seyahat kartı: yalnız gölge */
 .hero{box-shadow:0 8px 20px color-mix(in srgb,var(--heroBg) 35%,transparent),0 2px 5px color-mix(in srgb,var(--heroBg) 22%,transparent)}
 /* Biletler (B): gün koçanları + kartlar + arama */
@@ -1114,7 +1118,7 @@ html[data-theme=gece] .rcpt{background:var(--card)}
 .rcl{display:flex;justify-content:space-between;font-size:14px;padding:4px 2px}.rcl span{color:var(--ink2)}
 
 /* Belgelerim: pasaport kapakları + vize damgaları */
-.ppg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:6px}
+.pspg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:6px}
 .ppc{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;min-height:150px;border-radius:14px 18px 18px 14px;padding:12px 10px;color:#F6E7C8;background:linear-gradient(160deg,color-mix(in srgb,var(--pc) 88%,#fff),var(--pc));box-shadow:inset 6px 0 0 rgba(0,0,0,.18),0 6px 14px rgba(0,0,0,.2)}
 .ppc small{font-size:9.5px;letter-spacing:1.4px;font-weight:700;opacity:.9}
 .ppg-g{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;border:1.5px solid #E6C77A;color:#E6C77A;margin:12px 0 10px;font-style:normal}.ppg-g svg{width:22px;height:22px}
@@ -1123,16 +1127,16 @@ html[data-theme=gece] .rcpt{background:var(--card)}
 .vpage{display:flex;flex-wrap:wrap;gap:18px 14px;justify-content:center;align-items:center;padding:22px 12px;border-radius:16px;margin-bottom:8px;box-shadow:var(--cardSh);
  background:color-mix(in srgb,var(--card) 80%,#F3EAD8);background-image:repeating-linear-gradient(45deg,color-mix(in srgb,#0F766E 4%,transparent) 0 6px,transparent 6px 12px)}
 html[data-theme=gece] .vpage{background:var(--card)}
-.vst{display:flex;flex-direction:column;align-items:center;gap:1px;border:2.5px solid var(--sc);color:var(--sc);border-radius:10px;padding:7px 11px;transform:rotate(var(--r));font-family:ui-monospace,Menlo,monospace;line-height:1.15;opacity:.9;background:transparent;max-width:46%}
-.vst b{font-size:12.5px;font-weight:800;letter-spacing:.5px}.vst em{font-style:normal;font-size:11px;font-weight:800;letter-spacing:1px}.vst small{font-size:10px;font-weight:600}
-.vst.pend{border-style:dashed}.vst.rnd{border-radius:50%;width:104px;height:104px;justify-content:center;padding:6px}
-.vst:active{transform:rotate(var(--r)) scale(.95)}
+.vstp{display:flex;flex-direction:column;align-items:center;gap:1px;border:2.5px solid var(--sc);color:var(--sc);border-radius:10px;padding:7px 11px;transform:rotate(var(--r));font-family:ui-monospace,Menlo,monospace;line-height:1.15;opacity:.9;background:transparent;max-width:46%}
+.vstp b{font-size:12.5px;font-weight:800;letter-spacing:.5px}.vstp em{font-style:normal;font-size:11px;font-weight:800;letter-spacing:1px}.vstp small{font-size:10px;font-weight:600}
+.vstp.pend{border-style:dashed}.vstp.rnd{border-radius:50%;width:104px;height:104px;justify-content:center;padding:6px}
+.vstp:active{transform:rotate(var(--r)) scale(.95)}
 
 /* Takvim (B): defter kartı + spiral + washi bant + ay seçici */
-.cal{position:relative;border:0;box-shadow:var(--cardSh);overflow:visible}
-.cal::after{content:"";position:absolute;inset:0;border-radius:inherit;background-image:var(--grain);opacity:var(--grainOp);mix-blend-mode:multiply;pointer-events:none}
+.calw{position:relative;border:0;box-shadow:var(--cardSh);overflow:visible}
+.calw::after{content:"";position:absolute;inset:0;border-radius:inherit;background-image:var(--grain);opacity:var(--grainOp);mix-blend-mode:multiply;pointer-events:none}
 .rings{display:none}
-html[data-theme=defter] .cal{margin-top:16px;padding-top:20px}
+html[data-theme=defter] .calw{margin-top:16px;padding-top:20px}
 html[data-theme=defter] .rings{display:flex;justify-content:space-around;position:absolute;left:18px;right:18px;top:-9px;pointer-events:none;z-index:2}
 .rings b{width:10px;height:20px;border-radius:6px;background:linear-gradient(180deg,#B9A694,#7E6B5A);box-shadow:0 1px 2px rgba(0,0,0,.3)}
 .wash{position:absolute;left:0;right:0;top:4px;height:30px;background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--wc) 26%,transparent) 0 6px,color-mix(in srgb,var(--wc) 16%,transparent) 6px 12px);text-decoration:none;z-index:0}
@@ -1186,26 +1190,22 @@ html[data-theme=gece] .pkr.ok .vri{--tc:#4ADE80;color:#4ADE80}
 .pknote{font:700 22px/1.25 Georgia,'Noto Serif',serif;text-align:center;padding:4px 0 2px}
 .pksh h3{display:flex;align-items:center;gap:8px}
 .pkacts{display:flex;gap:8px;margin:2px 0 10px}.pkacts .btn{flex:1;white-space:nowrap;padding-left:8px;padding-right:8px}
-/* 5.26 özel günler — zaman çizelgesi A */
-.sptl{position:relative;margin:6px 0 14px;padding-left:22px}
-.sptl::before{content:"";position:absolute;left:7px;top:8px;bottom:8px;width:2px;background:var(--line);border-radius:2px}
-.spi{position:relative;--sc:#6B7280;background:var(--card);border-radius:16px;box-shadow:var(--cardSh);padding:11px 13px;margin:0 0 10px}
-.spi.sp-hol{--sc:#DC2626}.spi.sp-ev{--sc:#7C3AED}.spi.sp-obs{--sc:#B45309}.spi.sp-wk{--sc:#6B7280}
-html[data-theme=gece] .spi.sp-hol{--sc:#F87171}html[data-theme=gece] .spi.sp-ev{--sc:#A78BFA}html[data-theme=gece] .spi.sp-obs{--sc:#FBBF24}html[data-theme=gece] .spi.sp-wk{--sc:#9CA3AF}
-.spi.out{opacity:.72}
-.spd{position:absolute;left:-21px;top:15px;width:12px;height:12px;border-radius:50%;background:var(--sc);box-shadow:0 0 0 3px var(--bg)}
-.spi.sp-wk .spd{background:var(--bg);border:2.5px solid var(--sc);box-sizing:border-box}
-.spb small{display:block;font-size:12px;font-weight:700;color:var(--sc);letter-spacing:.2px}
-.spb b{display:block;font-size:15.5px;margin:2px 0 3px;color:var(--ink)}
-.spb p{margin:3px 0 0;font-size:13px;line-height:1.4;color:var(--ink2)}.spb p.spw{font-style:italic;color:var(--muted)}
-.spl{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;border-radius:999px;padding:2px 8px;background:color-mix(in srgb,var(--sc) 12%,var(--card));color:var(--sc)}
-.spl.ok{--sc:#15803D}.spl.ap{--sc:#B45309}.spl svg{width:12px;height:12px}
-.spq{display:inline-flex;align-items:center;gap:5px;margin-top:7px;background:none;border:0;padding:0;color:var(--acc);font:600 13px/1 inherit;font-family:inherit}.spq svg{width:14px;height:14px}
-.dchip.sp-hol{color:#DC2626;background:color-mix(in srgb,#DC2626 11%,var(--card))}
-.dchip.sp-ev{color:#7C3AED;background:color-mix(in srgb,#7C3AED 11%,var(--card))}
-.dchip.sp-obs{color:#B45309;background:color-mix(in srgb,#B45309 11%,var(--card))}
-.dchip.sp-wk{color:var(--muted);background:color-mix(in srgb,var(--ink) 7%,var(--card))}
-.tic.ev .tbd{background:#7C3AED}
+/* 5.26 tasarım dili B: çerçevesiz gölgeli kartlar + renkli simge kutuları (bilet detayı .vrv hariç) */
+:is(.sst,.smap,.group,.phr,.pcat,.shgr,.exyr,.tmini,.vrows:not(.vrv)){border:0;box-shadow:var(--cardSh)}
+:is(.sst,.group,.pcat,.shgr,.exyr,.vrows:not(.vrv)){position:relative}
+:is(.sst,.group,.pcat,.shgr,.exyr,.vrows:not(.vrv))::after{content:"";position:absolute;inset:0;border-radius:inherit;background-image:var(--grain);opacity:var(--grainOp);mix-blend-mode:multiply;pointer-events:none}
+html[data-theme=gece] :is(.sst,.group,.pcat,.shgr,.exyr,.vrows:not(.vrv))::after{mix-blend-mode:screen}
+.sst{display:flex;align-items:center;gap:11px;border-radius:16px}
+.sti{flex:none;width:40px;height:40px;border-radius:13px;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--tc) 7%,var(--card)) 0%,color-mix(in srgb,var(--tc) 19%,var(--card)) 100%);
+  box-shadow:inset 0 1px 0 var(--tHi),0 2px 5px color-mix(in srgb,var(--tc) 20%,transparent),0 1px 1.5px color-mix(in srgb,var(--tc) 12%,transparent)}
+html[data-theme=gece] .sti{box-shadow:inset 0 1px 0 var(--tHi),0 2px 6px rgba(0,0,0,.45);filter:brightness(1.35)}
+.sti svg{width:21px;height:21px}
+.stx{min-width:0}.stx>span{display:block;font-size:12px;line-height:1.3;color:var(--muted)}
+.sst .stx b{font:600 25px/1.1 var(--fontH,Georgia,serif);color:var(--ink)}
+.sst{padding:11px 10px;gap:9px}.sti{width:36px;height:36px;border-radius:12px}
+.wrapbtn{box-shadow:0 6px 16px color-mix(in srgb,var(--acc) 32%,transparent)}
+.smap{box-shadow:var(--cardSh)}
 </style>
 </head>
 <body>
