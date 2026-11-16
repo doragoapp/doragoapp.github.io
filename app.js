@@ -1,7 +1,7 @@
 'use strict';
 /* DoraGo — çevrimdışı bilet cüzdanı */
 
-const APP_VER = '5.26';
+const APP_VER = '5.27';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -20,6 +20,13 @@ const TYPES = [
 ];
 /* ikon seti: dolu renkli daire + beyaz çizgi ikon (i: bildirim/takvim metinleri için emoji) */
 const dot = (ic, col, cls = '') => `<span class="dot ${cls}" style="background:${col};--c:${col}">${I(ic)}</span>`;
+/* 5.27 boş durum standardı — büyük: ekranın tamamı boş; küçük: bir bölüm boş (metinler çağıranda TX'li gelir) */
+function emptyBig({ ic, c = 'var(--acc)', t, p = '', btns = [], tip = '' }) {
+  return `<div class="empty ebig"><span class="ebi" style="--tc:${c}">${I(ic)}</span><h3>${t}</h3>${p ? `<p>${p}</p>` : ''}${btns.length ? `<div class="ebtns">${btns.map(b => `<button class="btn${b.pri ? ' pri' : ''}" id="${b.id}">${b.ic ? I(b.ic) + ' ' : ''}${b.l}</button>`).join('')}</div>` : ''}${tip ? `<p class="etip">${tip}</p>` : ''}</div>`;
+}
+function emptySmall({ ic, c = 'var(--acc)', t, s = '', l = '', id = '' }) {
+  return `<div class="esm"><span class="esi" style="--tc:${c}">${I(ic)}</span><span class="est"><b>${t}</b>${s ? `<small>${s}</small>` : ''}</span>${l ? `<button class="esl" id="${id}">${l}</button>` : ''}</div>`;
+}
 const tDot = (k, cls = '') => { const t = typeOf(k); return dot(t.ic, t.col, cls); };
 const typeOf = k => TYPES.find(t => t.k === k) || TYPES.find(t => t.k === 'diger');
 /* platform: Android kabuğu (A) ya da tarayıcı / iPhone web uygulaması */
@@ -441,6 +448,7 @@ function lock() {
 /* yaşam döngüsü: arka plana gidince kilitle */
 function appPaused() { if (!S.pausedAt) S.pausedAt = Date.now(); if (S.unlocked) { lsSet('lastActive', Date.now()); try { nextHintSave(); } catch (e) {} } }
 function appResumed() {
+  { const v = document.getElementById('nexv'); if (v) setTimeout(() => { v.textContent = exactLabel(); }, 300); }
   const p = S.pausedAt; S.pausedAt = 0; if (!p) return;
   // dosya seçici / kaydet ekranı açıldığı için arka plana geçtiyse kilitleme
   if (S.pickAt && p >= S.pickAt && p - S.pickAt < 5000) { S.pickAt = 0; return; }
@@ -762,7 +770,7 @@ async function renderStats(app, anim) {
       ${st.longest ? TL`<p class="snote">En uzun uçuş: ${esc(apCity(st.longest.from) || st.longest.from)} → ${esc(apCity(st.longest.to) || st.longest.to)} · ${fmtN(Math.round(flightKm(st.longest)))} km${cmp}</p>` : ''}
       <div class="sh"><b>Pullarım</b><span>${st.countries.length} ülke${st.countries.length ? '' : TX(' · yurt dışı seyahatlerin burada birikir')}</span></div>
       <div class="stamps">${st.countries.map((c, i) => TL`<div class="pul" style="--pc:${['#C2410C', '#0F766E', '#854F0B', '#378ADD', '#993556', '#3B6D11'][i % 6]}"><b>${esc(c.cc)}</b><small>${esc(countryName(c.cc))}</small><i>${c.n} kez</i></div>`).join('')}<div class="pul empty"><b>?</b><small>sıradaki</small></div></div>`
-      : TL`<div class="empty"><p>${y} yılında henüz gerçekleşen bilet yok.</p></div>`}
+      : emptyBig({ ic: 'chart-bar', c: '#1E4FA0', t: TL`${y} henüz boş`, p: TL`${y} yılında henüz gerçekleşen bilet yok.`, tip: TX('Seyahatlerin bittikçe şehirler, uçuşlar ve pulların burada birikir.') })}
     </div></div>`;
   $('#back').onclick = () => go('home', 'back');
   $$('[data-yr]').forEach(b => b.onclick = () => { S.statsYear = +b.dataset.yr; renderStats(app); });
@@ -851,6 +859,7 @@ function renderPack(app, anim) {
   app.innerHTML = TL`<div class="page pack${animCls(anim)}">
     <div class="bar"><button class="icon-btn" id="back" aria-label="Geri">←</button><div class="vt"><b>${esc(name)} · Bavul</b><small>${done} / ${tot} hazır</small></div></div>
     <div class="sbody"><div class="pbar"><i style="width:${tot ? Math.round(done / tot * 100) : 0}%"></i></div>
+      ${tot ? '' : emptyBig({ ic: 'luggage', c: '#854F0B', t: TX('Bavul listen boş'), p: TX('Aşağıdaki gruplardan eşya ekle; eklediklerin sonraki seyahatlerin listesine de gelir.') })}
       ${(p.tips || []).map(t => `<div class="ptip">${I(/yağmur/.test(t) ? 'cloud-rain' : /priz|V ·/.test(t) ? 'plug' : /mont|°/.test(t) ? 'temperature' : /para/.test(t) ? 'cash' : /su /.test(t) ? 'droplet' : /uçuş|Saat/.test(t) ? 'plane-tilt' : 'bulb')}<span>${esc(t)}</span></div>`).join('')}
       ${PACK_CATS.map(c => { const its = p.items.filter(i => i.c === c); return TL`<div class="pcat"><div class="pch"><b>${c}</b><span>${its.filter(i => i.done).length}/${its.length}</span></div>
         ${its.map(i => TL`<div class="pit ${i.done ? 'on' : ''}" data-pi="${i.id}"><span class="pcb">${i.done ? I('check') : ''}</span><span class="ptx">${esc(i.t)}</span><button class="pdel" data-pdel="${i.id}" aria-label="Kaldır">${I('x')}</button></div>`).join('')}
@@ -1015,6 +1024,12 @@ const EXP_CATS = [
 ];
 const expCat = k => EXP_CATS.find(c => c.k === k) || EXP_CATS[5];
 const TYPE_CAT = { ucak: 'ulasim', ulasim: 'ulasim', konaklama: 'konaklama', yemek: 'yemek', muze: 'gezi', etkinlik: 'gezi', gezi: 'gezi', diger: 'diger' };
+/* 5.27: bilet "Para" seçimi (Android'in gri öneri listesi yerine): ana para, seyahat ülkesinin parası, EUR, USD, diğerleri */
+function priceCurOpts(d) {
+  const cur = (d.priceCur || baseCur()).toUpperCase(), cc = d.trip ? (tripCCs(d.trip) || [])[0] : '', tc = cc && window.CINFO && CINFO[cc] && CINFO[cc].cur;
+  const list = [...new Set([cur, baseCur(), ...(tc ? [tc] : []), 'EUR', 'USD', ...CURS])];
+  return list.map(c => `<option value="${esc(c)}" ${c === cur ? 'selected' : ''}>${esc(c)}</option>`).join('');
+}
 const CURS = ['TRY', 'EUR', 'USD', 'GBP', 'CHF', 'JPY', 'AED', 'SAR', 'QAR', 'THB', 'GEL', 'AZN', 'EGP', 'MAD', 'CZK', 'HUF', 'PLN', 'SEK', 'NOK', 'DKK', 'BGN', 'RON', 'RSD', 'ISK', 'CAD', 'AUD', 'NZD', 'CNY', 'KRW', 'SGD', 'HKD', 'INR', 'IDR', 'MYR', 'MXN', 'BRL', 'ZAR', 'ILS'];
 const pct = v => LANG === 'tr' ? '%' + v : v + '%';
 const baseCur = () => lsGet('dgBaseCur', 'TRY');
@@ -1123,14 +1138,15 @@ function renderExp(app, anim) {
     <div class="bar"><button class="icon-btn" id="back" aria-label="Geri">←</button><div class="vt"><b>Masraflar</b><small>${esc(name)}</small></div><button class="icon-btn" id="pMng" aria-label="Kişiler">${I('users')}</button></div>
     <div class="sbody">
       ${multi ? TL`<div class="seg exseg"><button class="${tab === 'list' ? 'on' : ''}" data-xt="list">${I('receipt')} Masraflar</button><button class="${tab === 'ppl' ? 'on' : ''}" data-xt="ppl">${I('users')} Kişiler</button></div>` : ''}
-      ${tab === 'ppl' ? sumCard + ppl : its.length ? rcpt : TL`<p class="snote">Henüz masraf yok. Biletlerine fiyat girersen burada kendiliğinden görünür.</p>`}
-      <p class="snote exfx">${FX && FX.base === b ? TL`Kur: Avrupa Merkez Bankası · ${esc(fmtDate(FX.date))}` : TX('Kur henüz alınmadı')} · <button id="fxR">Yenile</button> · Ana para: ${b}</p>
+      ${tab === 'ppl' ? sumCard + ppl : its.length ? rcpt : emptyBig({ ic: 'receipt', c: '#0F766E', t: TX('Henüz masraf yok'), p: TX('Yemek, taksi, müze… ne harcadıysan ekle. Biletlere fiyat girersen burada kendiliğinden görünür; kişiler arasında bölünür.'), btns: [{ id: 'eExAdd', pri: 1, ic: 'plus', l: TX('Masraf ekle') }, { id: 'eExPr', ic: 'ticket', l: TX('Bilete fiyat gir') }] })}
+      <p class="snote exfx"><span>${FX && FX.base === b ? TL`Kur: Avrupa Merkez Bankası · ${esc(fmtDate(FX.date))}` : TX('Kur henüz alınmadı')} · ${TL`Ana para: ${b}`}</span><button id="fxR">${I('refresh')} ${TX('Yenile')}</button></p>
     </div>
     <button class="fab exfab" id="exAdd" aria-label="Masraf ekle">${I('plus')}</button></div>`;
   $('#back').onclick = () => go('home', 'back');
   $$('[data-xt]').forEach(x => x.onclick = () => { S.expTab = x.dataset.xt; render(); });
   $$('[data-ex]').forEach(x => x.onclick = () => { const it = expItems(name).find(i => i.id === x.dataset.ex); if (it && it.sid) { const si = shopRec(name).items.find(i => i.id === it.sid); if (si) { shopDialog(name, si); return; } } expDialog(name, it); });
   $('#exAdd').onclick = () => expDialog(name, null);
+  { const e1 = $('#eExAdd'); if (e1) e1.onclick = () => expDialog(name, null); const e2 = $('#eExPr'); if (e2) e2.onclick = () => priceTicketPick(name); }
   $('#fxR').onclick = async () => { busy(TX('Kur alınıyor…')); await refreshFx(true); busy(false); render(); };
   const pm = () => peopleMenu(name); $('#pMng').onclick = pm; const pa = $('#pAdd'); if (pa) pa.onclick = () => addPerson(name);
   $$('[data-pp]').forEach(x => x.onclick = () => personMenu(name, +x.dataset.pp));
@@ -1311,7 +1327,7 @@ function renderShop(app, anim) {
       <div class="shadd"><input class="inp" id="shIn" placeholder="Örn. Buzdolabı magneti" autocomplete="off" maxlength="80"><button class="icon-btn" id="shPh" aria-label="Fotoğrafla ekle">${I('camera-plus')}</button><button class="btn pri" id="shAdd" aria-label="Ekle">${I('plus')}</button></div>
       ${items.length ? TL`<div class="seg shby"><button class="${by === 'store' ? 'on' : ''}" data-sby="store">${I('building-store')} Mağazaya göre</button><button class="${by === 'who' ? 'on' : ''}" data-sby="who">${I('user')} Kişiye göre</button></div>
         ${gs.map(g => `<div class="shgr">${head(g)}${g.its.map(row).join('')}</div>`).join('')}`
-      : TL`<div class="shempty">${I('shopping-cart')}<p><b>Alınacakları buraya yaz</b><br>Hediyeler, denenecek yiyecekler, yapılacaklar… Mağaza ve kişi isteğe bağlı. Fotoğrafı WhatsApp'tan <b>Paylaş → DoraGo</b> ile de ekleyebilirsin.</p></div>`}
+      : emptyBig({ ic: 'shopping-cart', c: '#7C3AED', t: TX('Alınacakları buraya yaz'), p: TX('Hediyeler, denenecek yiyecekler, yapılacaklar… Mağaza ve kişi isteğe bağlı.'), tip: TX('Fotoğrafı WhatsApp\'tan <b>Paylaş → DoraGo</b> ile de ekleyebilirsin.') })}
     </div></div>`;
   $('#back').onclick = () => go('home', 'back');
   const add = async () => { const v = ($('#shIn').value || '').trim(); if (!v) { $('#shIn').focus(); return; } const r = ensureShop(name), now = Date.now(); r.items.push({ id: 'i' + uid(), name: v, qty: 1, createdAt: now, updatedAt: now }); await saveShop(); renderShop(app); setTimeout(() => { const x = $('#shIn'); if (x) x.focus(); }, 30); };
@@ -1482,6 +1498,21 @@ function parkRowHtml(name, ask) {
   if (ask && parkDue(name)) return TL`<button class="vrow pkr" data-parkadd="${esc(name)}"><span class="vri">${I('car')}</span><span class="vrt"><small>Otopark</small><b>Aracını park ettin mi?</b><span>Kat/sıra fotoğrafını kaydet, dönüşte hatırlatırım</span></span><span class="pkgo">Kaydet</span></button>`;
   return '';
 }
+/* Seyahatler ana ekranı: sıradaki seyahat kartının altında otopark şeridi (kayıtlı yer önce; yoksa gidiş günü sorusu) */
+function homeParkHtml() {
+  if (!PARK) { getPark().then(() => { if (Object.keys(PARK).length || upcoming().some(t => t.trip)) quietRender(); }); return ''; }
+  const now = Date.now();
+  const saved = Object.keys(PARK).filter(n => { const w = parkWhen(n); return !w || now < w + 2 * 86400000; })
+    .sort((a, b) => (PARK[b].at || 0) - (PARK[a].at || 0))[0];
+  const name = saved || ((upcoming()[0] || {}).trip || '');
+  if (!name || (!saved && !parkDue(name))) return '';
+  const r = PARK[name];
+  if (r) {
+    const when = new Date(r.at || now).toLocaleString(LOC, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return TL`<button class="pkstrip ok" data-park="${esc(name)}"><span class="pksi">${I('car')}</span><span class="pkst"><b>${r.note ? TL`Aracın: ${esc(r.note)}` : TX('Aracının yeri kayıtlı')}</b><small>${esc(name)} · ${esc(when)}</small></span>${r.ph && r.ph[0] ? `<span class="pkth" data-pkph="${esc(r.ph[0])}"></span>` : I('chevron-right')}</button>`;
+  }
+  return TL`<button class="pkstrip" data-parkadd="${esc(name)}"><span class="pksi">${I('car')}</span><span class="pkst"><b>Aracını park ettin mi?</b><small>${esc(name)} · kat/sıra fotoğrafını kaydet</small></span><span class="pkgo">Kaydet</span></button>`;
+}
 function bindPark(root) {
   $$('[data-park]', root).forEach(b => b.onclick = () => parkSheet(b.dataset.park));
   $$('[data-parkadd]', root).forEach(b => b.onclick = () => parkDialog(b.dataset.parkadd));
@@ -1501,7 +1532,7 @@ async function parkDialog(name) {
         ${st.ph.length < PARK_MAX ? TL`<button class="pkp add" data-pa="cam">${I('camera')}<small>Fotoğraf çek</small></button>` : ''}</div>
       ${st.ph.length < PARK_MAX ? TL`<button class="lnk" data-pa="gal">${I('photo')} Galeriden seç</button>` : ''}
       <div class="fld"><label for="pkN">Not <small>kat, sıra, otopark adı</small></label><input class="inp" id="pkN" maxlength="60" value="${esc(st.note)}" placeholder="Örn. B2 · sıra 14 · P3 otoparkı"></div>
-      <button class="pkgeo ${st.geo}" data-pa="geo">${geoTxt()}</button>
+      ${st.geo === 'ok' ? `<div class="pkgr ${st.acc > 50 ? 'weak' : ''}"><button class="pkgeo ok" data-pa="geomap">${st.acc > 50 ? TL`${I('alert-triangle')} Konum kesin değil · ±${Math.round(st.acc)} m` : geoTxt()}</button><button class="pkgb" data-pa="geo" aria-label="${TX('Yenile')}">↻</button><button class="pkgb" data-pa="geox" aria-label="${TX('Kaldır')}">×</button></div>` : `<button class="pkgeo ${st.geo}" data-pa="geo">${geoTxt()}</button>`}
       <p class="snote">Dönüş günü hatırlatırım. Bilgiler yalnız bu telefonda kalır, paylaşılmaz.</p>
       <div class="row2"><button class="btn" data-pa="cancel">Vazgeç</button><button class="btn pri" data-pa="ok">Kaydet</button></div></div>`;
     bindPark(ov);
@@ -1529,6 +1560,8 @@ async function parkDialog(name) {
       if (!st.geo) getGeo(); draw(); return;
     }
     if (act === 'geo') { keep(); if (st.geo !== 'busy') { getGeo(); draw(); } return; }
+    if (act === 'geox') { keep(); st.lat = st.lon = st.acc = undefined; st.geo = ''; draw(); return; }
+    if (act === 'geomap') { if (st.lat != null) showOnMap({ lat: st.lat, lon: st.lon }); return; }
     if (act === 'ok') {
       keep();
       if (!st.ph.length && !st.note.trim() && st.geo !== 'ok') { toast(TX('Fotoğraf ya da not ekle')); return; }
@@ -2013,10 +2046,12 @@ function stampHtml(code, col) { return `<span class="dstamp" style="--c:${col}">
 function passBadge(p) { const t = todayStr(); if (!p.pexp) return TX('<span class="dbd wn">Tarih yok</span>'); if (p.pexp < t) return TX('<span class="dbd er">Bitti</span>'); if (p.pexp < addMonths(t, 6)) return TX('<span class="dbd wn">6 ay</span>'); return `<span class="dbd ok">${I('check')}</span>`; }
 /* 5.26 Belgelerim: pasaport kapağı kartları + vize damgaları */
 const daysBetween = (a, b) => Math.round((new Date(b + 'T12:00') - new Date(a + 'T12:00')) / 864e5);
-const PASS_COL = { navy: '#1E3557', green: '#1F4D35', black: '#1F2226', red: '#8E1B22', maroon: '#6E1A22' };
+const PASS_COL = { navy: '#1E3557', green: '#1F4D35', black: '#1F2226', red: '#8E1B22', maroon: '#6E1A22', grey: '#4A5058' };
+const PASS_CN = { maroon: 'Bordo', red: 'Kırmızı', navy: 'Lacivert', green: 'Yeşil', grey: 'Gri', black: 'Siyah' };
+function passCol(p) { return PASS_COL[(p && PASS_COL[p.pcol] && p.pcol) || PASS_BY[p && p.pcc] || 'maroon']; }
 const PASS_BY = { US: 'navy', GB: 'navy', CA: 'navy', AU: 'navy', BR: 'navy', IN: 'navy', AR: 'navy', MX: 'green', UA: 'navy', KZ: 'navy', NZ: 'black', CH: 'red', JP: 'red', SA: 'green', PK: 'green', MA: 'green', DZ: 'green', EG: 'green', NG: 'green', IR: 'navy', AZ: 'navy', AE: 'navy', QA: 'maroon', TR: 'maroon' };
 function passCover(p) {
-  const col = PASS_COL[PASS_BY[p.pcc] || 'maroon'], dl = p.pexp ? daysBetween(todayStr(), p.pexp) : null;
+  const col = passCol(p), dl = p.pexp ? daysBetween(todayStr(), p.pexp) : null;
   const yrs = dl != null && dl > 365 ? Math.floor(dl / 365) : 0;
   const sub = !p.pexp ? TX('Bitiş tarihi yok') : dl < 0 ? TX('Süresi doldu') : yrs ? TL`Bitiş ${p.pexp.slice(0, 4)} · ${yrs} yıl` : TL`Bitiş ${dl} gün sonra`;
   const lvl = dl == null ? '' : dl < 183 ? 'er' : dl < 365 ? 'wn' : '';
@@ -2036,6 +2071,13 @@ function visaRow(v) {
   const sub = v.status === 'ok' ? [v.from && v.to ? `${fdate(v.from)} – ${fdate(v.to)}` : v.to ? TL`Bitiş ${fdate(v.to)}` : '', v.stay ? TL`${v.stay} gün` : ''] : [v.status === 'appt' && v.appt ? `${fdate(v.appt.slice(0, 10))} ${v.appt.slice(11, 16)}${v.place ? ' · ' + v.place : ''}` : ''];
   return `<button class="drow" data-vid="${esc(v.id)}">${stampHtml(regionCode(v.region), v.region === 'SCH' ? '#185FA5' : '#0F6E56')}<span class="ext"><b>${esc(regionName(v.region))}${DOCS.people.length > 1 ? ' · ' + esc(who) : ''}</b><small>${esc([v.kind && v.kind !== 'visa' ? VKIND[v.kind] : '', v.entry === 'multi' ? TX('çok giriş') : v.entry === 'single' ? TX('tek giriş') : '', ...sub, (v.pages || []).length ? `${v.pages.length} ek` : ''].filter(Boolean).join(' · '))}</small></span><span class="dbd ${st[0]}">${esc(st[1])}</span></button>`;
 }
+/* 5.27: Schengen bölümü yalnız ilgili kişide: Schengen vizesi, son 180 günde Schengen günü ya da gelecekte Schengen seyahati */
+function schRelevant(pid) {
+  if (DOCS.visas.some(v => v.region === 'SCH' && (v.people || []).includes(pid))) return true;
+  if (schengenDays(pid, todayStr()) > 0) return true;
+  const t = todayStr();
+  return allTrips().some(g => (g.e || g.a || '') >= t && tripTrav(g.name).includes(pid) && tripCCs(g.name).some(cc => SCHENGEN.has(cc)));
+}
 function schBar(pid) { const used = schengenDays(pid, todayStr()), left = Math.max(0, 90 - used); return TL`<div class="dsch"><div class="dsb"><i style="width:${Math.min(100, used / 90 * 100)}%"></i></div><small>Son 180 günde ${used} gün Schengen'de · <b>${left} gün kaldı</b></small></div>`; }
 function renderDocs(app, anim) {
   const pid = S.docPid, me = pid && person(pid);
@@ -2044,15 +2086,15 @@ function renderDocs(app, anim) {
   let body = '';
   if (me) {
     const vs = DOCS.visas.filter(v => (v.people || []).includes(me.id));
-    body = TL`<button class="dpass" id="dPass"><small>${esc(countryName(me.pcc).toLocaleUpperCase(LANG))} · PASAPORT</small><b>${me.plast ? '···· ' + esc(me.plast) : esc(me.name)}</b><span>${me.pexp ? TL`Bitiş ${fdate(me.pexp)}` : TX('Bitiş tarihini ekle')}</span>${(me.ppages || []).length ? I('paperclip') : ''}</button>
-      <div class="exsec">Vizeler</div>${vs.length ? `<div class="vpage">${vs.map(visaStamp).join('')}</div>` : TX('<p class="snote">Bu kişi için vize kaydı yok.</p>')}
-      <div class="exsec">Schengen 90/180</div><div class="vrows" style="padding:12px">${schBar(me.id)}</div>
+    body = TL`<button class="dpass" id="dPass" style="background:${passCol(me)}"><small>${esc(countryName(me.pcc).toLocaleUpperCase(LANG))} · PASAPORT</small><b>${me.plast ? '···· ' + esc(me.plast) : esc(me.name)}</b><span>${me.pexp ? TL`Bitiş ${fdate(me.pexp)}` : TX('Bitiş tarihini ekle')}</span>${(me.ppages || []).length ? I('paperclip') : ''}</button>
+      <div class="exsec">Vizeler</div>${vs.length ? `<div class="vpage">${vs.map(visaStamp).join('')}</div>` : emptySmall({ ic: 'stamp', c: '#1E4FA0', t: TX('Bu kişi için vize kaydı yok'), s: TX('Vize, e-vize ya da oturma izni'), l: TX('+ Vize'), id: 'eVisa' })}
+      ${schRelevant(me.id) ? TL`<div class="exsec">Schengen 90/180</div><div class="vrows" style="padding:12px">${schBar(me.id)}</div>` : ''}
       ${me.id !== 'me' ? TX('<button class="btn dan" id="dDelP" style="width:100%;margin-top:16px">Kişiyi sil</button>') : ''}`;
   } else {
-    const sch = DOCS.people.filter(p => DOCS.visas.some(v => v.region === 'SCH' && (v.people || []).includes(p.id)) || schengenDays(p.id, todayStr()) > 0);
+    const sch = DOCS.people.filter(p => schRelevant(p.id));
     body = TL`${warns.length ? `<div class="dwarn">${warns.slice(0, 6).map(w => `<p class="${w.lvl}">${I(w.lvl === 'info' ? 'calendar-event' : 'alert-triangle')}<span>${esc(w.txt)}</span></p>`).join('')}</div>` : ''}
       <div class="exsec">Pasaportlar</div><div class="pspg">${DOCS.people.map(passCover).join('')}<button class="ppc add" id="dAddP">${I('user-plus')}<b>Kişi ekle</b></button></div>
-      <div class="exsec">Vizeler</div>${DOCS.visas.length ? `<div class="vrows">${DOCS.visas.slice().sort((x, y) => (y.to || '') < (x.to || '') ? -1 : 1).map(visaRow).join('')}</div>` : TX('<p class="snote">Henüz vize kaydı yok.</p>')}
+      <div class="exsec">Vizeler</div>${DOCS.visas.length ? `<div class="vrows">${DOCS.visas.slice().sort((x, y) => (y.to || '') < (x.to || '') ? -1 : 1).map(visaRow).join('')}</div>` : emptySmall({ ic: 'stamp', c: '#1E4FA0', t: TX('Henüz vize kaydı yok'), s: TX('Vize, e-vize ya da oturma izni'), l: TX('+ Vize'), id: 'eVisa' })}
       ${sch.length ? TL`<div class="exsec">Schengen 90/180</div><div class="vrows" style="padding:12px">${sch.map(p => `${DOCS.people.length > 1 ? `<b class="dschn">${esc(p.name)}</b>` : ''}${schBar(p.id)}`).join('')}</div>` : ''}
       <button class="tmini dlook" id="dLook">${I('world')}<span><small>Vize gerekiyor mu?</small><b>Ülkeye göre bak</b></span></button>
       <p class="snote">Vize bilgisi genel bilgidir (Passport Index açık verisi); kurallar değişebilir, seyahatten önce resmi kaynaktan kontrol et.</p>`;
@@ -2066,7 +2108,7 @@ function renderDocs(app, anim) {
   $$('[data-vid]').forEach(b => b.onclick = () => visaDialog(DOCS.visas.find(v => v.id === b.dataset.vid)));
   const on = (id, f) => { const e = $('#' + id); if (e) e.onclick = f; };
   on('dAddP', () => personDialog(null)); on('dPass', () => personDialog(me)); on('dLook', () => visaLookup());
-  on('dAdd', () => visaDialog(null, me ? { people: [me.id] } : {}));
+  on('dAdd', () => visaDialog(null, me ? { people: [me.id] } : {})); on('eVisa', () => visaDialog(null, me ? { people: [me.id] } : {}));
   on('dDelP', async () => { if (!await dialog({ title: TL`${me.name} silinsin mi?`, text: TX('Pasaport bilgisi silinir; vizelerden de çıkarılır.'), ok: TX('Sil'), danger: true })) return; DOCS.people = DOCS.people.filter(p => p.id !== me.id); for (const v of DOCS.visas) v.people = (v.people || []).filter(x => x !== me.id); DOCS.visas = DOCS.visas.filter(v => v.people.length); await delPages(me.ppages || []); S.docPid = null; await saveDocs(); render(); });
 }
 /* belge ekleri: fotoğraf ya da PDF (sayfalar görüntüye çevrilir), çoklu, silinebilir */
@@ -2106,6 +2148,7 @@ function personDialog(p) {
       <div class="fld"><label for="pName">Ad</label><input class="inp" id="pName" maxlength="30" placeholder="Örn. Ayşe" value="${esc(st.name)}"></div>
       <div class="fld"><label for="pCc">Pasaportun ülkesi</label><select class="inp" id="pCc">${ccOptions(st.pcc)}</select></div>
       <div class="row2"><div class="fld"><label for="pExp">Bitiş tarihi</label><input class="inp" type="date" id="pExp" value="${esc(st.pexp)}"></div><div class="fld"><label for="pLast">No · son 4 hane</label><input class="inp code" id="pLast" maxlength="4" placeholder="isteğe bağlı" value="${esc(st.plast)}"></div></div>
+      <div class="fsec"><small>Pasaport rengi</small><div class="pcsw"><button class="${!st.pcol ? 'on' : ''}" data-pcol="" style="--pc:${PASS_COL[PASS_BY[st.pcc] || 'maroon']}"><i></i>${TX('Otomatik')}</button>${Object.keys(PASS_CN).map(k => `<button class="${st.pcol === k ? 'on' : ''}" data-pcol="${k}" style="--pc:${PASS_COL[k]}" aria-label="${esc(TX(PASS_CN[k]))}"><i></i></button>`).join('')}</div></div>
       ${attHtml(AT.ids, TX('Pasaport sayfası'))}
       <p class="tde" id="pErr"></p><div class="row2"><button class="btn" data-pa="0">Vazgeç</button><button class="btn pri" data-pa="1">Kaydet</button></div></div>`;
   };
@@ -2113,13 +2156,15 @@ function personDialog(p) {
   const close = async ok => { ov.remove(); dlgClose = null; if (!ok && AT.added.length) await delPages(AT.added); };
   ov.addEventListener('click', async e => {
     if (await attClick(e, AT, () => { keep(); draw(); })) return;
+    const pc = e.target.closest('[data-pcol]'); if (pc) { keep(); st.pcol = pc.dataset.pcol || undefined; if (!st.pcol) delete st.pcol; draw(); return; }
     const a = e.target.closest('[data-pa]'); if (!a) { if (e.target === ov) close(); return; }
     if (a.dataset.pa === '0') { close(); return; }
     keep(); if (!st.name) { $('#pErr', ov).textContent = TX('Adı yaz'); return; }
     st.ppages = AT.ids; if (AT.removed.length) await delPages(AT.removed);
-    st.updatedAt = Date.now(); if (p) Object.assign(p, st); else DOCS.people.push(st);
+    st.updatedAt = Date.now(); if (p) { Object.assign(p, st); if (!st.pcol) delete p.pcol; } else DOCS.people.push(st);
     await saveDocs(); close(true); render();
   });
+  ov.addEventListener('change', e => { if (e.target.id === 'pCc') { keep(); draw(); } });
   dlgClose = () => close(); attBlobs(AT.ids).then(() => { draw(); noAnimAfter(ov); document.body.appendChild(ov); });
 }
 function visaDialog(v, preset = {}) {
@@ -2876,7 +2921,7 @@ function renderTrip(app, anim) {
   ].filter(Boolean);
   const kd = kindOf(tripKind(name)), hasCov = ph.length > 0, art = hasCov || !artReady() ? '' : tripMapSvg(name), flags = tripFlags(name);
   const memSec = ph.length ? TL`<div class="tsec" id="tpMem"><b>Anılar</b><span>${ph.length} / ${PHOTO_MAX}</span></div><div class="pstrip">${strip}</div>` : '';
-  const plan = ts.length ? tripDays(name, g, ts) : TX('<p class="snote">Henüz bilet yok.</p>');
+  const plan = ts.length ? tripDays(name, g, ts) : emptySmall({ ic: 'ticket', t: TX('Henüz bilet yok'), s: TX('Uçuş, otel, müze… biletlerini ekle'), l: TX('+ Ekle'), id: 'eTAdd' });
   app.innerHTML = TL`<div class="page tripp${animCls(anim)}">
     <div class="tph thero${hasCov ? ' cov' : ''}" style="--kc:${kd ? kd.c : 'var(--acc)'}"${hasCov ? ` data-cov="${esc(name)}"` : ''}>
       ${art ? `<div class="tart">${art}</div>` : hasCov || window.WORLD ? '' : '<div class="tart skel"></div>'}
@@ -2913,6 +2958,7 @@ function renderTrip(app, anim) {
   on('tpRoute', () => tripRoute(name)); on('tpAdd', () => addNew(name)); on('tpQuick', () => quickPlace(name));
   $$('.tplan .card').forEach(c => bindCardPress(c, () => openTicket(c.dataset.id)));
   bindDays(app); bindPark(app); fillDayWx(app);
+  { const ta = $('#eTAdd'); if (ta) ta.onclick = () => addNew(name); }
   fillCardWx(app);
 }
 
@@ -3344,11 +3390,10 @@ function renderHome(app, anim) {
   let body = '', n = 0;
   const cardS = (t, past, mode = 'list') => card(t, past, n++, mode).replace('<button class="card ', `<button class="card ${sel ? 'selmode ' : ''}${sel && sel.has(t.id) ? 'selected ' : ''}`);
   if (!S.tickets.length && !(S.trips || []).length) {
-    body = TL`<div class="empty"><div class="big">${dot('ticket', 'var(--acc)', 'xl')}</div><h3>Henüz bilet yok</h3>
-      <p>PDF, ekran görüntüsü ya da fotoğraf olarak biletlerini ekle. İnternet olmadan da açılırlar.</p>
-      <p>${A ? TX('Başka uygulamalardan <b>Paylaş → DoraGo</b> ile de gönderebilirsin.') : ''}</p></div>`;
+    body = emptyBig({ ic: 'ticket', t: TX('Henüz bilet yok'), p: TX('PDF, ekran görüntüsü ya da fotoğraf olarak biletlerini ekle. İnternet olmadan da açılırlar.'),
+      btns: [{ id: 'eAddT', pri: 1, ic: 'plus', l: TX('Bilet ekle') }, { id: 'eAddP', ic: 'map-pin-plus', l: TX('Yer ekle') }], tip: A ? TX('Başka uygulamalardan <b>Paylaş → DoraGo</b> ile de gönderebilirsin.') : '' });
   } else if (!list.length) {
-    body = TX('<div class="empty"><p>Bu filtreye uyan bilet yok.</p></div>');
+    body = emptySmall({ ic: 'filter', t: TX('Bu filtreye uyan bilet yok'), s: TX('Filtreyi değiştir ya da temizle'), l: TX('Temizle'), id: 'eClr' });
   } else {
     const { up, nod, past } = sortTickets(list);
     if (up.length) {
@@ -3407,6 +3452,9 @@ function renderHome(app, anim) {
   $$('[data-tsug]').forEach(b => b.onclick = () => tripSuggest(b.dataset.tsug));
   $$('[data-tadd]').forEach(b => b.onclick = () => addNew(b.dataset.tadd));
   bindStatusBars(app); bindHdr(); bindDays(app); fillDayWx(app);
+  const eOn = (id, f) => { const e = $('#' + id, app); if (e) e.onclick = f; };
+  eOn('eAddT', async () => { const f = await pickFiles('image/*,application/pdf,.pkpass,application/vnd.apple.pkpass'); if (f.length) startImport(f); });
+  eOn('eAddP', () => newPlace({})); eOn('eClr', () => { S.filter = 'all'; S.tkind = ''; S.trip = ''; render(); });
   const thn = $('#thNew'); if (thn) thn.onclick = () => createTripFlow();
   const thx = $('#thX'); if (thx) thx.onclick = () => { lsSet('tripHintDone', true); renderHome(app); };
 ;
@@ -3684,18 +3732,17 @@ function renderTrips(app, anim) {
   if (up.length) body += TL`<div class="tlh">Yaklaşan · ${up.length}</div>` + up.map(tripCardHtml).join('');
   let yr = '';
   for (const g of past) { const y = (g.a || g.e || '').slice(0, 4); if (y !== yr) { yr = y; body += TL`<div class="tlh">Geçmiş · ${y}</div>`; } body += tripCardHtml(g); }
-  if (!all.length) body = TL`<div class="empty"><div class="big">${dot('map-2', 'var(--acc)', 'xl')}</div><h3>Henüz seyahat yok</h3>
-      <p>Biletlerini bir seyahatte topla; bavul, masraf ve vize tek sayfada.</p>
-      <div class="ebtns"><button class="btn pri" id="tlNew">${I('plus')} Yeni seyahat</button><button class="btn" id="tlWorld">${I('world')} Haritadan</button></div></div>`;
+  if (!all.length) body = emptyBig({ ic: 'map-2', t: TX('Henüz seyahat yok'), p: TX('Biletlerini bir seyahatte topla; bavul, masraf ve vize tek sayfada.'),
+      btns: [{ id: 'tlNew', pri: 1, ic: 'plus', l: TX('Yeni seyahat') }, { id: 'tlWorld', ic: 'world', l: TX('Haritadan') }], tip: TX('Gideceğin ülkeyi haritada işaretle, seyahati oradan aç.') });
   if (!all.length && TRIPS_READY !== 2) body = '<div class="skc" aria-hidden="true"><i class="skel"></i><b class="skel"></b><s class="skel"></s></div>'.repeat(2);
   if (!TRIPS_READY) { TRIPS_READY = 1; tripsData().then(() => { TRIPS_READY = 2; if (S.view === 'home' && S.tab === 'trips') quietRender(); }); }
-  const hero = (THEMES[curTheme()].hero && S.tickets.length ? heroHtml() : '') + statusBars();
+  const hero = (THEMES[curTheme()].hero && S.tickets.length ? heroHtml() : '') + (S.tickets.length ? homeParkHtml() : '') + statusBars();
   app.innerHTML = TL`<div class="page${animCls(anim)}">
     <div class="top">${header(TX('Seyahatler'), hdrBtns())}</div>
     ${hero}
     <div class="list tlist">${body}</div></div>
     <button class="fab" id="add" aria-label="Ekle">${I('plus')}</button>${tabsBar()}`;
-  bindShell(app); bindHdr(); bindHero(); bindStatusBars(app);
+  bindShell(app); bindHdr(); bindHero(); bindStatusBars(app); bindPark(app);
   const nw = $('#tlNew'); if (nw) nw.onclick = () => createTripFlow();
   const nwW = $('#tlWorld'); if (nwW) nwW.onclick = () => openWorld();
   $$('[data-tn]').forEach(b => b.onclick = () => openTrip(b.dataset.tn));
@@ -3776,8 +3823,8 @@ function renderCal(app, anim) {
   if (dayTs.length) dayBody = dayTs.map((t, i) => card(t, (t.endDate || t.date) < today, i, { day: S.calDay })).join('');
   else {
     const next = S.tickets.filter(t => t.date && t.date > S.calDay).sort((a, b) => a.date < b.date ? -1 : 1)[0];
-    dayBody = TL`<div class="empty" style="padding:22px 20px"><p style="margin:0">Bu güne ait bilet yok.</p>
-      ${next ? TL`<p style="margin:10px 0 0"><button class="today-btn" id="goNext">Sonraki bilet: ${esc(fmtDate(next.date))} →</button></p>` : ''}</div>`;
+    dayBody = emptySmall({ ic: 'calendar', c: '#0E7490', t: TX('Bu güne ait bilet yok'), s: next ? TL`Sonraki bilet: ${esc(fmtDate(next.date))}` : '', l: TX('+ Ekle'), id: 'eCAdd' })
+      + (next ? TL`<p class="ecnx"><button class="today-btn" id="goNext">Sonraki bilet: ${esc(fmtDate(next.date))} →</button></p>` : '');
   }
   const isCur = S.calMonth === today.slice(0, 7);
   app.innerHTML = TL`<div class="page${animCls(anim === 'slide-l' || anim === 'slide-r' ? null : anim)}">
@@ -3803,6 +3850,7 @@ function renderCal(app, anim) {
   $('#nextM').onclick = () => shift(1);
   const mp = $('#mPick'); if (mp) mp.onclick = () => monthPicker(app);
   const tb = $('#todayB'); if (tb) tb.onclick = () => { const dir = S.calMonth < today.slice(0, 7) ? 'slide-l' : 'slide-r'; S.calDay = today; S.calMonth = today.slice(0, 7); renderCal(app, dir); };
+  { const ca = $('#eCAdd'); if (ca) ca.onclick = () => addNew(); }
   const gn = $('#goNext'); if (gn) gn.onclick = () => {
     const next = S.tickets.filter(t => t.date && t.date > S.calDay).sort((a, b) => a.date < b.date ? -1 : 1)[0];
     const dir = next.date.slice(0, 7) > S.calMonth ? 'slide-l' : null; S.calDay = next.date; S.calMonth = next.date.slice(0, 7); renderCal(app, dir);
@@ -4551,7 +4599,7 @@ function renderMulti(app, anim) {
         S.tickets = S.tickets.filter(t => t.id !== ticket.id).concat(ticket); saved.push(ticket);
       }
       busy(false); S.multi = null; toast(TL`${saved.length} uçuş kaydedildi`);
-      go('home', 'back'); syncReminders(); maybeAskNotif();
+      go('home', 'back'); syncReminders(); maybeAskNotif().then(maybeAskExact);
     } catch (e) { console.error(e); busy(false); toast(TX('Kaydedilemedi: ') + (e.message || e)); }
   };
 }
@@ -4626,6 +4674,16 @@ function newPlace(pre = {}) {
   S.draft = d; go('edit');
 }
 
+/* boş masraf ekranı: seyahatin fiyatsız biletlerinden birini seç → düzenleme (Fiyat alanı) */
+async function priceTicketPick(name) {
+  const ts = S.tickets.filter(t => t.trip === name && !(parseAmt(t.priceAmt) > 0) && t.status !== 'cancel');
+  if (!ts.length) { toast(S.tickets.some(t => t.trip === name) ? TX('Bütün biletlerin fiyatı girilmiş') : TX('Bu seyahatte henüz bilet yok')); return; }
+  const id = await sheetMenu(TX('Hangi bilete fiyat gireceksin?'), ts.slice(0, 12).map(t => ({ icon: I(typeOf(t.type).ic), label: t.type === 'ucak' && t.from && t.to ? `${t.from} → ${t.to}` : (t.title || typeOf(t.type).n), sub: t.date ? fmtDate(t.date) : '', value: t.id })));
+  const t = id && S.tickets.find(x => x.id === id); if (!t) return;
+  const pages = []; for (const pid of t.pageIds || []) { const p = await getOne('pages', pid); if (p) pages.push(p); }
+  S.cur = { t, pages, zoom: 1 }; S.lastTid = t.id; editTicket(t);
+  setTimeout(() => { const f = $('#f-priceAmt'); if (f) { f.scrollIntoView({ block: 'center' }); f.focus(); } }, 450);
+}
 async function editTicket(t) {
   const pages = S.cur && S.cur.t.id === t.id ? S.cur.pages : [];
   const d = { ...t, pages: pages.map(p => ({ ...p })), removed: [], auto: new Set(), geoLabel: t.locSrc || '', geoApprox: !!t.locApprox, _pc0: t.priceCur || '' };
@@ -4900,7 +4958,7 @@ function renderEdit(app, anim) {
       ${inp('title', d.type === 'konaklama' ? TX('Otel / konaklama adı') : isPlace(d.type) ? TX('Yerin adı') : TX('Başlık'), 'title', `maxlength="80" placeholder="${d.type === 'ucak' ? TX('Boş bırakırsan rota yazılır') : d.type === 'yemek' ? TX('Örn. Sahil restoranı') : d.type === 'gezi' ? TX('Örn. Tarihi merkez yürüyüşü') : TX('Örn. Louvre Müzesi')}"`)}
       ${typeFields}
       <div class="row2"><div class="fld" style="flex:1.6"><label for="f-priceAmt">Fiyat (isteğe bağlı)</label><input class="inp" id="f-priceAmt" data-k="priceAmt" inputmode="decimal" placeholder="Masraflara eklenir" value="${esc(d.priceAmt)}" autocomplete="off"></div>
-        <div class="fld"><label for="f-priceCur">Para</label><input class="inp code" id="f-priceCur" data-k="priceCur" list="curl" maxlength="3" autocapitalize="characters" placeholder="${baseCur()}" value="${esc(d.priceCur)}"><datalist id="curl">${CURS.map(c => `<option value="${c}">`).join('')}</datalist></div></div>
+        <div class="fld"><label for="f-priceCur">Para</label><select class="inp code" id="f-priceCur" data-k="priceCur">${priceCurOpts(d)}</select></div></div>
       <div class="fld"><label for="tripBtn">Seyahat (isteğe bağlı)</label><input type="hidden" id="f-trip" data-k="trip" value="${esc(d.trip)}">
         <button class="inp tripbtn ${d.trip ? '' : 'empty'}" id="tripBtn" type="button">${I('luggage')}<span>${esc(d.trip || TX('Seyahat seç'))}</span>${I('chevron-down')}</button></div>
       <div class="fld"><label for="f-notes">Not</label><textarea class="inp" id="f-notes" data-k="notes" maxlength="1000">${esc(d.notes)}</textarea></div>
@@ -4912,7 +4970,7 @@ function renderEdit(app, anim) {
   if (d.multiIdx != null) { const pg = $('#addPg')?.closest('.fld'); if (pg) pg.remove(); }
 
   const sync = () => {
-    $$('[data-k]', app).forEach(el => { d[el.dataset.k] = el.tagName === 'SELECT' ? +el.value : el.value.trim(); });
+    $$('[data-k]', app).forEach(el => { d[el.dataset.k] = el.tagName === 'SELECT' && el.dataset.k !== 'priceCur' ? +el.value : el.value.trim(); });
     if (d.from) d.from = d.from.toUpperCase(); if (d.to) d.to = d.to.toUpperCase();
     if (d.flightNo) d.flightNo = d.flightNo.toUpperCase().replace(/\s+/g, '');
     if (d.type === 'ucak') {
@@ -4982,7 +5040,7 @@ function renderEdit(app, anim) {
       busy(false); S.draft = null; toast(isPlace(ticket.type) ? TX('Yer kaydedildi') : TX('Bilet kaydedildi'));
       S.cur = { t: ticket, pages: d.pages.map(p => ({ id: p.id, blob: p.blob, w: p.w, h: p.h })), zoom: 1 };
       go('view');
-      syncReminders(); if (ticket.date) maybeAskNotif();
+      syncReminders(); if (ticket.date) maybeAskNotif().then(maybeAskExact);
     } catch (e) { console.error(e); busy(false); toast(TX('Kaydedilemedi: ') + (e.message || e)); }
   };
   const del = $('#del');
@@ -5244,6 +5302,14 @@ async function maybeAskNotif() {
   const st = await requestNotif();
   if (st === 'granted') { syncReminders(); toast(TX('Hatırlatmalar açık')); }
 }
+/* ilk seyahat bileti eklenince bir kez: kesin alarm izni */
+async function maybeAskExact() {
+  if (!A || !S.notif.on || exactState() !== 'off' || (await metaGet('exactAsked'))) return;
+  if (!S.tickets.some(t => t.trip && t.date >= todayStr())) return;
+  await metaSet('exactAsked', true);
+  await new Promise(r => setTimeout(r, 700));
+  await askExactDialog(true);
+}
 
 /* ---------- ayarlar ---------- */
 function renderSettings(app, anim) {
@@ -5273,6 +5339,7 @@ function renderSettings(app, anim) {
     ${A ? TL`<div class="gtitle">Bildirimler</div>
     <div class="group">
       <div class="item"><span class="ii">${I('bell')}</span><span class="it">Hatırlatmalar<small id="nst">${notifHint()}</small></span><label class="sw"><input type="checkbox" id="non" ${S.notif.on ? 'checked' : ''}><span></span></label></div>
+      ${exactState() === 'na' || !A ? '' : TL`<button class="item" id="nexact"><span class="ii">${I('clock')}</span><span class="it">Tam zamanında bildirim<small id="nexv">${exactLabel()}</small></span></button>`}
       <div class="item"><span class="ii">${I('calendar-event')}</span><span class="it">Bir gün önce hatırlat</span><label class="sw"><input type="checkbox" id="ndb" ${S.notif.dayBefore ? 'checked' : ''}><span></span></label></div>
       <div class="item"><span class="ii">${I('clock')}</span><span class="it">Saatler önce hatırlat</span>
         <select id="nh">${[[0, TX('Kapalı')], [1, TX('1 saat')], [2, TX('2 saat')], [3, TX('3 saat')], [4, TX('4 saat')], [6, TX('6 saat')]].map(([v, n]) => `<option value="${v}" ${S.notif.hours === v ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
@@ -5322,6 +5389,7 @@ function renderSettings(app, anim) {
   const ge = $('#geo'); if (ge) ge.onchange = async () => { S.geocode = ge.checked; await metaSet('geocode', S.geocode); };
   $('#diagBtn').onclick = showDiag;
   const ma = $('#mapapp'); if (ma) ma.onchange = async () => { S.mapApp = ma.value; await metaSet('mapApp', S.mapApp); toast(TX('Kaydedildi')); };
+  const nx = $('#nexact'); if (nx) nx.onclick = () => askExactDialog(false);
   const saveN = async () => { await metaSet('notif', S.notif); const n = syncReminders(); const h = $('#nst'); if (h) h.textContent = notifHint(n); };
   const non = $('#non');
   if (non) non.onchange = async () => {
@@ -5372,6 +5440,15 @@ function renderSettings(app, anim) {
   })();
 }
 
+/* 5.27: kesin alarm (Android 12+). on = dakikasında, off = izin yok → gecikebilir, na = gerek yok */
+function exactState() { try { return A && A.exactState ? A.exactState() : 'na'; } catch (e) { return 'na'; } }
+function exactLabel() { return exactState() === 'on' ? TX('Açık · bildirimler dakikasında gelir') : TX('Kapalı · telefon uykudayken gecikebilir — açmak için dokun'); }
+async function askExactDialog(first) {
+  if (exactState() !== 'off') return false;
+  if (!await dialog({ title: TX('Bildirimler tam zamanında gelsin mi?'), text: TX('Telefon uykudayken Android bildirimleri geciktirebilir. Check-in ve kalkış hatırlatmalarının dakikasında gelmesi için açılan ekranda DoraGo\'ya "Alarm ve hatırlatıcılar" izni ver.'), ok: TX('İzin ver'), cancel: first ? TX('Sonra') : TX('Vazgeç') })) return false;
+  try { A.askExact(); } catch (e) {}
+  return true;
+}
 function notifHint(n) {
   const st = notifState();
   if (!S.notif.on) return TX('Kapalı');
@@ -5446,7 +5523,7 @@ async function backup() {
     for (const t of await getAll('tickets')) tickets.push({ ...t, thumb: t.thumb ? { type: t.thumb.type, data: B64.enc(await t.thumb.arrayBuffer()) } : null });
     const pages = [];
     for (const p of await getAll('pages')) pages.push({ id: p.id, w: p.w, h: p.h, type: p.blob.type, data: B64.enc(await p.blob.arrayBuffer()) });
-    const plain = TE.encode(JSON.stringify({ app: 'biletim', format: 1, at: new Date().toISOString(), tickets, pages, trips: S.trips || [], tripPhotos: (await getTP()), expenses: (await getExp()), shop: (await getShop()), parking: (await getPark()), docs: (await getDocs()), wish: (await getWish()), firstUse: await ensureFirstUse() }));
+    const plain = TE.encode(JSON.stringify({ app: 'biletim', format: 1, at: new Date().toISOString(), tickets, pages, trips: S.trips || [], tripPhotos: (await getTP()), expenses: (await getExp()), shop: (await getShop()), parking: (await getPark()), docs: (await getDocs()), wish: (await getWish()), firstUse: await ensureFirstUse(), ...(await backupExtra()) }));
     const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
     const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await aesKey(pin, salt), plain));
     const out = new Uint8Array(8 + 16 + 12 + ct.length); out.set(MAGIC, 0); out.set(salt, 8); out.set(iv, 24); out.set(ct, 36);
@@ -5462,6 +5539,39 @@ async function backup() {
   } catch (e) { console.error(e); busy(false); toast(TX('Yedek alınamadı: ') + (e.message || e)); }
 }
 
+/* 5.27: yedeğe eklenenler — bavul, şablon, gizlenenler, kontrol edilen seyahatler, paylaşım kodları, ayarlar */
+const BK_META = ['packs', 'packTpl', 'packHide', 'tripReviewed', 'shareCodes', 'knownCodes'];
+const BK_SET_META = ['askNotif', 'lockDelay', 'notif', 'autoBright', 'mapApp', 'wx'];
+const BK_SET_LS = ['dgTheme', 'dgThemeAuto', 'dgBaseCur', 'dgPlacePh', 'statsNoWork', 'dgLang', 'dgHome', 'dgPass'];
+async function backupExtra() {
+  const meta = {}, set = { meta: {}, ls: {} };
+  for (const k of BK_META) { const v = await metaGet(k); if (v != null) meta[k] = v; }
+  for (const k of BK_SET_META) { const v = await metaGet(k); if (v != null) set.meta[k] = v; }
+  for (const k of BK_SET_LS) { try { const v = localStorage.getItem(k); if (v != null) set.ls[k] = v; } catch (e) { } }
+  return { meta, settings: set };
+}
+async function restoreExtra(data, fresh) {
+  const m = data.meta || {};
+  if (m.packs) { await getPacks(); for (const [k, r] of Object.entries(m.packs)) {
+      const cur = PACKS[k]; if (!cur) { PACKS[k] = r; continue; }
+      for (const it of r.items || []) { const x = cur.items.find(i => i.id === it.id || (i.t === it.t && i.c === it.c)); if (!x) cur.items.push(it); else if (it.done) x.done = true; } }
+    await savePacks(); }
+  const uni = async (k, key) => { if (!m[k]) return; const cur = (await metaGet(k)) || []; const out = [...cur]; for (const x of m[k]) if (!out.some(y => key(y) === key(x))) out.push(x); await metaSet(k, out); return out; };
+  await uni('packTpl', x => x.c + '|' + x.t); await uni('packHide', x => x);
+  const rv = await uni('tripReviewed', x => x); if (rv) metaCache.tripReviewed = rv;
+  const kc = await uni('knownCodes', x => x); if (kc && kc.length > 30) await metaSet('knownCodes', kc.slice(0, 30));
+  if (m.shareCodes) { const cur = (await metaGet('shareCodes')) || {}; for (const [k, v] of Object.entries(m.shareCodes)) if (!cur[k]) cur[k] = v; await metaSet('shareCodes', cur); }
+  /* ayarlar yalnız boş cihazda (bilet yokken) geri gelir; dolu cihazda kullanıcının ayarları korunur */
+  let reload = false;
+  if (fresh && data.settings) {
+    for (const [k, v] of Object.entries(data.settings.meta || {})) if (BK_SET_META.includes(k)) await metaSet(k, v);
+    for (const [k, v] of Object.entries(data.settings.ls || {})) if (BK_SET_LS.includes(k)) { try { if (k === 'dgLang' && localStorage.getItem(k) !== v) reload = true; localStorage.setItem(k, v); } catch (e) { } }
+    const sm = data.settings.meta || {};
+    if ('lockDelay' in sm) S.lockDelay = sm.lockDelay; if ('autoBright' in sm) S.autoBright = sm.autoBright; if (sm.notif) S.notif = Object.assign({ on: true, dayBefore: true, hours: 3 }, sm.notif);
+    if ('mapApp' in sm) S.mapApp = sm.mapApp || ''; if ('wx' in sm) S.wx = sm.wx !== false; if (sm.askNotif) S.askN = Object.assign({ m: 'after', h: 2, t: '09:00' }, sm.askNotif);
+  }
+  return reload;
+}
 async function restore() {
   const [f] = await pickFiles('*/*', false); if (!f) return;
   const buf = new Uint8Array(await f.arrayBuffer());
@@ -5474,14 +5584,26 @@ async function restore() {
   busy(TX('Geri yükleniyor…'));
   try {
     const data = JSON.parse(TD.decode(plain));
-    const have = new Set(S.tickets.map(t => t.id));
+    const have = new Set(S.tickets.map(t => t.id)), fresh = !S.tickets.length;
     const pageMap = new Map(data.pages.map(p => [p.id, p]));
-    let added = 0;
+    let added = 0, upd = 0;
     const hpFix = [];
     for (const t of data.tickets) {
       if (have.has(t.id)) {
+        const cur = S.tickets.find(x => x.id === t.id);
+        /* 5.27: yedekteki kayıt daha yeniyse (durum, iade, kontrol, notlar…) o kazanır; sayfalar korunur, eksikler yedekten tamamlanır */
+        if (cur && (t.updatedAt || 0) > (cur.updatedAt || 0)) {
+          const ids = [...new Set([...(t.pageIds || []), ...(t.hph && t.hph.id ? [t.hph.id] : [])])], np = [];
+          for (const id of ids) if (!(await getOne('pages', id)) && pageMap.has(id)) { const x = pageMap.get(id); np.push({ id: x.id, w: x.w, h: x.h, blob: new Blob([B64.dec(x.data)], { type: x.type }) }); }
+          const okIds = new Set([...(cur.pageIds || []), ...np.map(p => p.id)]);
+          const nt = { ...t, pageIds: (t.pageIds || []).filter(id => okIds.has(id)), thumb: t.thumb ? new Blob([B64.dec(t.thumb.data)], { type: t.thumb.type }) : cur.thumb };
+          if (!nt.pageIds.length && (cur.pageIds || []).length) nt.pageIds = cur.pageIds;
+          if (nt.hph && nt.hph.id && !okIds.has(nt.hph.id) && !(await getOne('pages', nt.hph.id))) nt.hph = cur.hph || null;
+          await saveTicketDB(nt, np, []); Object.keys(cur).forEach(k => delete cur[k]); Object.assign(cur, nt); upd++;
+          continue;
+        }
         /* var olan bilet: başlık fotoğrafı sayfası eksikse yedekten tamamla (5.23.2) */
-        const cur = S.tickets.find(x => x.id === t.id), hid = cur && cur.hph && cur.hph.id;
+        const hid = cur && cur.hph && cur.hph.id;
         if (hid && pageMap.has(hid) && !(await getOne('pages', hid))) { const x = pageMap.get(hid); hpFix.push({ id: x.id, w: x.w, h: x.h, blob: new Blob([B64.dec(x.data)], { type: x.type }) }); }
         continue;
       }
@@ -5491,8 +5613,10 @@ async function restore() {
     }
     if (hpFix.length) await putPages(hpFix);
     let tAdded = 0;
-    for (const r of data.trips || []) if (r && r.name && !tripRec(r.name)) { (S.trips = S.trips || []).push(r); tAdded++; }
-    if (tAdded) await saveTripRecs();
+    let tMod = false;
+    for (const r of data.trips || []) { if (!r || !r.name) continue; const cur = tripRec(r.name); if (!cur) { (S.trips = S.trips || []).push(r); tAdded++; } else for (const [k, v] of Object.entries(r)) if (cur[k] == null && v != null) { cur[k] = v; tMod = true; } }
+    if (tAdded || tMod) await saveTripRecs();
+    const reload = await restoreExtra(data, fresh);
     if (data.docs) { await getDocs(); const np = []; const pg = id => { const x = id && pageMap.get(id); if (x) np.push({ id: x.id, w: x.w, h: x.h, blob: new Blob([B64.dec(x.data)], { type: x.type }) }); };
       for (const p of data.docs.people || []) { const i = DOCS.people.findIndex(x => x.id === p.id); if (i < 0) { DOCS.people.push(p); (p.ppages || [p.ppage]).forEach(pg); } else if ((p.updatedAt || 0) > (DOCS.people[i].updatedAt || 0)) { DOCS.people[i] = p; (p.ppages || [p.ppage]).forEach(pg); } }
       for (const v of data.docs.visas || []) { const i = DOCS.visas.findIndex(x => x.id === v.id); if (i < 0) { DOCS.visas.push(v); (v.pages || [v.page]).forEach(pg); } else if ((v.updatedAt || 0) > (DOCS.visas[i].updatedAt || 0)) { DOCS.visas[i] = v; (v.pages || [v.page]).forEach(pg); } }
@@ -5504,9 +5628,10 @@ async function restore() {
     if (data.shop) { await getShop(); const have = new Set(Object.values(SHOP).flatMap(r => r.items.map(i => i.ph)).filter(Boolean)); mergeShop(data.shop); const np = []; for (const r of Object.values(data.shop)) for (const i of r.items || []) { const x = i.ph && !have.has(i.ph) && pageMap.get(i.ph); if (x) np.push({ id: x.id, w: x.w, h: x.h, blob: new Blob([B64.dec(x.data)], { type: x.type }) }); } if (np.length) await putPages(np); await saveShop(); }
     if (data.tripPhotos) { await getTP(); const np = []; for (const [k, r] of Object.entries(data.tripPhotos)) { const cur = TP[k] || (TP[k] = { cover: r.cover, items: [], ...(r.cpos ? { cpos: r.cpos } : {}) }); for (const it of r.items || []) { const pg = pageMap.get(it.id); if (!pg || cur.items.some(x => x.id === it.id) || cur.items.length >= PHOTO_MAX) continue; np.push({ id: pg.id, w: pg.w, h: pg.h, blob: new Blob([B64.dec(pg.data)], { type: pg.type }) }); cur.items.push(it); } if (!cur.cover && cur.items[0]) cur.cover = cur.items[0].id; if (!cur.items.length) delete TP[k]; } if (np.length) await putPages(np); await saveTP(); }
     busy(false);
-    toast(added ? TL`${added} bilet geri yüklendi` : tAdded ? TL`${tAdded} seyahat geri yüklendi` : hpFix.length ? TL`${hpFix.length} fotoğraf geri yüklendi` : TX('Yedekteki biletler zaten mevcut'), 3500);
-    if (tAdded && !added) render();
-    if (added) syncReminders();
+    toast(added ? TL`${added} bilet geri yüklendi` + (upd ? TL` · ${upd} güncellendi` : '') : upd ? TL`${upd} bilet güncellendi` : tAdded ? TL`${tAdded} seyahat geri yüklendi` : hpFix.length ? TL`${hpFix.length} fotoğraf geri yüklendi` : TX('Yedekteki biletler zaten mevcut'), 3500);
+    if (reload) { setTimeout(() => location.reload(), 1200); return; }
+    render();
+    if (added || upd) syncReminders();
   } catch (e) { console.error(e); busy(false); toast(TX('Geri yüklenemedi: ') + (e.message || e)); }
 }
 

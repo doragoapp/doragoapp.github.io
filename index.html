@@ -1043,7 +1043,6 @@ html[data-theme=gece] .founder{background:#3A2C10;color:#F6D58E;border-color:#5A
 .shth{width:40px;height:40px;border-radius:10px;background:var(--soft) center/cover no-repeat;flex:none}.shth.big{width:72px;height:72px}
 .shwho{flex:none;font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:#FDF0D5;color:#7A4A06}
 html[data-theme=gece] .shwho{background:#3A2C10;color:#F6D58E}
-.shempty{text-align:center;color:var(--muted);padding:34px 18px}.shempty svg{width:42px;height:42px;color:var(--acc);opacity:.8}.shempty p{font-size:14px;line-height:1.5}.shempty b{color:var(--ink)}
 .shphx,.shloc{display:flex;align-items:center;gap:10px;margin:6px 0 10px}.shloc [data-sa=lpick]{flex:1;white-space:nowrap}.shloc [data-sa=loc]{flex:0 0 52px;padding:0;align-self:stretch}.shloc span{flex:1;min-width:0;font-size:13.5px;color:var(--ink)}.shloc span svg,.shphx .btn svg,.shloc .btn svg{width:16px;height:16px;vertical-align:-3px}
 .shdlg .fld label small{font-weight:400;color:var(--muted);margin-left:4px}.shdlg .fchips{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 10px}
 .shdone{margin:4px 0 8px}.shdone.on{background:var(--acc);color:var(--onacc,#fff);border-color:var(--acc)}
@@ -1184,6 +1183,10 @@ html[data-theme=gece] .pkr.ok .vri{--tc:#4ADE80;color:#4ADE80}
 .pkgeo{display:flex;align-items:center;gap:8px;width:100%;padding:11px 12px;border-radius:12px;border:1px dashed var(--line);background:var(--soft);color:var(--ink2);font:inherit;font-size:14px;margin:4px 0 6px}
 .pkgeo.ok{border-style:solid;border-color:color-mix(in srgb,#15803D 40%,transparent);color:#15803D;background:color-mix(in srgb,#15803D 8%,var(--card))}
 .pkgeo.no{color:#B45309}
+.pkgr{display:flex;gap:6px;align-items:stretch;margin:4px 0 6px}
+.pkgr .pkgeo{margin:0;flex:1;min-width:0;text-align:left}
+.pkgb{flex:none;width:44px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink2);font:inherit;font-size:20px;line-height:1}
+.pkgr.weak .pkgeo{color:#B45309;border-color:color-mix(in srgb,#B45309 45%,transparent);background:color-mix(in srgb,#F59E0B 10%,var(--card))}
 .pkbig{display:grid;gap:8px;margin:4px 0 10px}.pkbig.n{grid-template-columns:repeat(2,1fr)}
 .pkb{border:0;border-radius:16px;aspect-ratio:4/3;background:var(--soft) center/cover}
 .pkbig:not(.n) .pkb{aspect-ratio:4/3;width:100%}
@@ -1206,6 +1209,37 @@ html[data-theme=gece] .sti{box-shadow:inset 0 1px 0 var(--tHi),0 2px 6px rgba(0,
 .sst{padding:11px 10px;gap:9px}.sti{width:36px;height:36px;border-radius:12px}
 .wrapbtn{box-shadow:0 6px 16px color-mix(in srgb,var(--acc) 32%,transparent)}
 .smap{box-shadow:var(--cardSh)}
+.pcsw{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pcsw button{display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:4px;border-radius:12px;border:2px solid transparent;background:none;color:var(--ink);font:inherit;font-size:13px}
+.pcsw button:first-child{padding-right:10px;background:color-mix(in srgb,var(--ink) 7%,transparent)}
+.pcsw i{width:28px;height:28px;border-radius:8px;background:var(--pc);box-shadow:inset 0 0 0 1px rgba(255,255,255,.15),0 2px 6px rgba(0,0,0,.18)}
+.pcsw button.on{border-color:var(--acc)}
+.pkstrip{display:flex;align-items:center;gap:12px;width:calc(100% - 24px);margin:8px 12px 2px;padding:10px 12px;border:0;border-radius:16px;background:var(--card);box-shadow:var(--cardSh);color:var(--ink);font:inherit;text-align:left}
+.pksi{flex:none;width:40px;height:40px;border-radius:12px;display:grid;place-items:center;--tc:#0E7490;color:var(--tc);background:linear-gradient(160deg,color-mix(in srgb,var(--tc) 7%,var(--card)),color-mix(in srgb,var(--tc) 19%,var(--card)));box-shadow:inset 0 1px 0 var(--tHi,rgba(255,255,255,.6)),0 3px 8px color-mix(in srgb,var(--tc) 22%,transparent)}
+.pkstrip.ok .pksi{--tc:#15803D}
+.pksi svg{width:22px;height:22px}
+.pkst{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.pkst b{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pkst small{font-size:12.5px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pkstrip>svg{width:18px;height:18px;color:var(--ink3,var(--ink2))}
+.ebig{padding:44px 24px 32px}
+.ebig .ebi{display:inline-grid;place-items:center;width:62px;height:62px;border-radius:19px;color:var(--tc);background:linear-gradient(160deg,color-mix(in srgb,var(--tc) 9%,var(--card)),color-mix(in srgb,var(--tc) 22%,var(--card)));box-shadow:inset 0 1px 0 var(--tHi,rgba(255,255,255,.6)),0 8px 20px color-mix(in srgb,var(--tc) 26%,transparent)}
+.ebig .ebi svg{width:32px;height:32px}
+.ebig h3{font-family:var(--fontH,Georgia,'Noto Serif',serif);font-size:22px;margin:16px 0 6px}
+.ebig p{margin:0 auto;max-width:330px;line-height:1.45}
+.ebig .etip{margin-top:16px;font-size:13px;color:var(--muted)}
+.esm{display:flex;align-items:center;gap:12px;margin:8px 0;padding:12px 14px;border-radius:16px;background:var(--card);box-shadow:var(--cardSh);text-align:left}
+.esi{flex:none;width:38px;height:38px;border-radius:11px;display:grid;place-items:center;color:var(--tc);background:linear-gradient(160deg,color-mix(in srgb,var(--tc) 7%,var(--card)),color-mix(in srgb,var(--tc) 19%,var(--card)));box-shadow:inset 0 1px 0 var(--tHi,rgba(255,255,255,.6)),0 3px 8px color-mix(in srgb,var(--tc) 22%,transparent)}
+.esi svg{width:20px;height:20px}
+.est{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.est b{font-size:14.5px;color:var(--ink)}.est small{font-size:12.5px;color:var(--muted)}
+.esl{flex:none;border:0;background:none;color:var(--acc);font:inherit;font-weight:700;font-size:14px;padding:8px 4px}
+.list>.esm{margin:10px 12px}
+.ecnx{text-align:center;margin:10px 0 0}
+.exfx{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;text-align:left!important;justify-content:flex-start;padding-right:76px}
+.exfx>span{flex:0 1 auto;min-width:0}
+.exfx #fxR{flex:none;display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);background:var(--card);color:var(--ink2);border-radius:999px;padding:5px 11px;font:inherit;font-size:12.5px;font-weight:600;text-decoration:none}
+.exfx #fxR svg{width:14px;height:14px}
 </style>
 </head>
 <body>
